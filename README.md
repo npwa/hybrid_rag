@@ -5,6 +5,23 @@
 This is a **Hybrid RAG** (Retrieval-Augmented Generation) pipeline that combines two
 different retrieval methods and merges their results before generating an answer.
 
+```mermaid
+graph LR
+    Query[Query] --> EM[Embedding Model]
+    EM --> VDB[Vector DB]
+    VDB --> DR[Dense Results]
+    
+    Query --> BM25[BM25 Index]
+    BM25 --> SR[Sparse Results]
+    
+    DR --> RRF[Reciprocal Rank Fusion]
+    SR --> RRF
+    
+    RRF --> TopK[Top-K Chunks]
+    TopK --> LLM[LLM]
+    LLM --> Answer[Answer]
+```
+
 When a query comes in, it's sent down two parallel paths:
 
 1. **Dense path (top)**: The query goes through an embedding model, which converts it into
