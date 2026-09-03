@@ -1,0 +1,9 @@
+PyMuPDF
+python-docx
+pytesseract
+pikepdf
+msoffcrypto-tool
+openpyxl
+Pillow
+PyYAML
+charset-normalizer

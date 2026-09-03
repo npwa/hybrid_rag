@@ -1,0 +1,28 @@
+# --- Private data ingested from the real source Documents tree ---
+# This is the whole point of the ignore list: none of it is needed to understand or
+# validate the project (the manifest schema and extraction logic are fully documented
+# in step-1-requirements.md and ingest/, and config/ingest_config.example.yaml shows
+# the config shape) — but the content itself is personal (medical, financial, legal
+# documents, filenames, real paths).
+extracted_text/
+manifest.db
+manifest.db-journal
+manifest.db-wal
+manifest.db-shm
+logs/
+
+# Real ingest config — contains a personal filesystem path (source_root).
+# Copy config/ingest_config.example.yaml to config/ingest_config.yaml to run locally.
+config/ingest_config.yaml
+
+# --- Personal / machine-local Claude Code settings (e.g. additionalDirectories) ---
+.claude/settings.local.json
+
+# --- Python ---
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# --- OS cruft ---
+.DS_Store

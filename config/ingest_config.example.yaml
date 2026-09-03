@@ -1,0 +1,99 @@
+# Step 1 ingestion configuration — see step-1-requirements.md for the full spec.
+#
+# This is a template. Copy it to ingest_config.yaml (gitignored — see .gitignore) and
+# set source_root to your own document tree before running run_ingest.py. The real
+# ingest_config.yaml is not tracked because source_root is a personal filesystem path.
+#
+#   cp config/ingest_config.example.yaml config/ingest_config.yaml
+
+# --- Scope & paths ---
+source_root: /path/to/your/Documents
+working_dir: ~/work/hybrid_rag
+extracted_text_dir: extracted_text     # relative to working_dir
+manifest_db: manifest.db               # relative to working_dir
+logs_dir: logs                         # relative to working_dir
+
+# --- File walk rules (§3) ---
+# Symlinks are never followed (hard rule, not configurable) — always logged, always skipped.
+exclude_hidden: true                   # dotfiles / dot-directories. Off (false) to include them.
+
+# --- Classification (§4) ---
+include_extensions:
+  - png
+  - jpg
+  - jpeg
+  - bmp
+  - gif
+  - txt
+  - text
+  - md
+  - pdf
+  - xls
+  - xlsx
+  - doc
+  - docx
+
+exclude_extensions:
+  - c
+  - crt
+  - css
+  - dat
+  - dict
+  - el
+  - ged
+  - gpg
+  - gz
+  - h
+  - heic
+  - htm
+  - html
+  - ipynb
+  - js
+  - key
+  - log
+  - mov
+  - mp3
+  - mp4
+  - org
+  - out
+  - ovpn
+  - pfx
+  - pict
+  - psd
+  - py
+  - rtf
+  - sh
+  - tgz
+  - tiff
+  - tsv
+  - wav
+  - zip
+
+# Trailing characters that mark editor backup/lock files -> excluded regardless of extension.
+exclude_suffixes:
+  - "~"
+  - "#"
+
+# --- README/TODO handling (§4b, §6) ---
+# TODO-named files get identical treatment to README-named files: same classification,
+# same convert_to_md.sh conversion path (unless already .md, then passthrough).
+readme_todo_pattern: "^(readme|todo)"  # case-insensitive prefix match on filename
+convert_to_md_script: convert_to_md.sh # relative to working_dir
+
+# --- PDF extraction (§6) ---
+# If direct text-layer extraction yields fewer non-whitespace chars than this, fall back to OCR.
+pdf_text_min_chars: 50
+
+# --- LibreOffice legacy doc/xls conversion (§6, §6a) ---
+soffice_binary: soffice
+soffice_timeout_seconds: 120
+# After .doc/.xls -> LibreOffice conversion, flag as warning_empty_conversion if the
+# resulting text has fewer than this many non-whitespace characters.
+empty_conversion_min_chars: 20
+
+# --- OCR confidence thresholds (§6a "OCR Confidence Threshold") ---
+# Applies to scanned PDFs and image files (png/jpg/jpeg/bmp/gif).
+ocr_confidence_high: 70   # >= this -> trust output, status=ocr_extracted
+ocr_confidence_low: 40    # >= this and < high -> status=ocr_low_confidence
+                           # < this -> status=failed, text discarded
+tesseract_lang: eng
