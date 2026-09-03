@@ -97,3 +97,9 @@ ocr_confidence_high: 70   # >= this -> trust output, status=ocr_extracted
 ocr_confidence_low: 40    # >= this and < high -> status=ocr_low_confidence
                            # < this -> status=failed, text discarded
 tesseract_lang: eng
+
+# --- Concurrency (scalability) ---
+# Extraction (OCR/PDF/LibreOffice) is CPU-bound and runs in a process pool — one worker
+# process per file in flight, up to this many at once. null = os.cpu_count().
+# The SQLite manifest has a single writer (the main process); workers only read.
+max_workers: null

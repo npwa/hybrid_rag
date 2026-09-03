@@ -2,7 +2,7 @@
 """Step 1 ingestion entrypoint — discovery, classification, extraction.
 
 Usage:
-    ./run_ingest.py [--config config/ingest_config.yaml] [--limit N] [--export-jsonl PATH]
+    ./run_ingest.py [--config config/ingest_config.yaml] [--limit N] [--export-jsonl PATH] [--workers N]
 
 See step-1-requirements.md for the full spec. This script only walks the
 source tree, classifies files, extracts normalized text, and records
@@ -32,9 +32,12 @@ def main() -> int:
     parser.add_argument("--config", default="config/ingest_config.yaml", help="Path to ingest_config.yaml")
     parser.add_argument("--limit", type=int, default=None, help="Process at most N files (testing; disables deleted-marking)")
     parser.add_argument("--export-jsonl", default=None, help="After the run, export the manifest to this JSONL path")
+    parser.add_argument("--workers", type=int, default=None, help="Override max_workers from config (process pool size)")
     args = parser.parse_args()
 
     config = Config.load(args.config)
+    if args.workers is not None:
+        config.max_workers = args.workers
 
     ts = run_timestamp()
     log_path = setup_logging(config.logs_dir, ts)

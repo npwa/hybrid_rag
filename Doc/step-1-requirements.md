@@ -148,6 +148,36 @@ This is a starting point, not a fixed rule — worth tuning after seeing real ou
 
 - Re-running the ingestion script should be safe at any time: only new/changed files (per `content_hash`) get (re-)processed; everything else is a no-op.
 
+## 8a. Concurrency (added for scale — target: 1M documents / 500GB)
+
+Extraction (OCR, PDF parsing, LibreOffice conversion) is CPU-bound and the dominant cost
+per file — the original single-threaded implementation processed the real ~2,500-file
+corpus in ~22 minutes, almost entirely OCR time. `run_ingest.py` now runs extraction in a
+process pool (`config.max_workers`, default `os.cpu_count()`):
+
+- **Workers are pure and stateless.** Each opens its own *read-only* SQLite connection to
+  `manifest.db` (safe alongside the single writer under WAL mode — see below) to look up
+  a file's prior state, does the expensive extraction work, and returns a result. A
+  worker never writes to the database, the filesystem, or the log.
+- **The main process is the sole writer.** It consumes worker results as they complete,
+  performs the order-dependent Markdown collision-naming (§4b), writes extracted text,
+  and upserts the manifest — all logging happens here too, so results are identical to
+  the single-threaded implementation regardless of which worker finished a given file.
+- **`manifest.db` uses WAL mode** (`PRAGMA journal_mode=WAL`, `synchronous=NORMAL`) and
+  **batches commits** (every 200 rows, not one commit per row) — one fsync per row was
+  the dominant SQLite bottleneck at large file counts.
+- **Every numeric/OCR library is pinned to one thread per worker process**
+  (`OMP_NUM_THREADS=1` and equivalents, set in the worker's init hook, before any
+  extraction happens). This turned out to matter more than anything else: Tesseract's
+  own internal OpenMP thread pool defaults to using every core *per invocation*, so N
+  worker processes each also fanning out to N threads causes N² contention. An early
+  benchmark of the pool without this fix took 75 minutes on the real corpus — 3.4x
+  *slower* than the original single-threaded run despite ~14.7x average core
+  utilization, because nearly all of that CPU time was contention, not useful work.
+  With single-threaded libraries inside each worker, the same real corpus (2,504 files)
+  completed in **214s (3m34s) — a 6.2x speedup** over the 1320s single-threaded baseline
+  on this 16-core machine, with byte-for-byte identical output.
+
 ## 9. Step 1 Deliverable (handoff boundary)
 
 Output of this step: a script that populates `manifest.db` plus normalized `.txt` files under `extracted_text/` for every successfully processed source file. Step 2 (chunking) consumes this output — it does not touch original source files again.

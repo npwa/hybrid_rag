@@ -92,10 +92,20 @@ class Manifest:
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(str(db_path))
         self.conn.row_factory = sqlite3.Row
+        # WAL lets worker processes hold their own read-only connection concurrently
+        # with this single writer (§ concurrency model in pipeline.py); NORMAL sync
+        # trades a small durability window for much fewer fsyncs on bulk writes —
+        # an acceptable tradeoff for a personal ingestion tool, not a transactional DB.
+        self.conn.execute("PRAGMA journal_mode=WAL")
+        self.conn.execute("PRAGMA synchronous=NORMAL")
         self.conn.executescript(SCHEMA)
         self.conn.commit()
 
+    def commit(self) -> None:
+        self.conn.commit()
+
     def close(self) -> None:
+        self.conn.commit()
         self.conn.close()
 
     def __enter__(self) -> "Manifest":
@@ -109,6 +119,11 @@ class Manifest:
         return cur.fetchone()
 
     def upsert(self, rec: FileRecord) -> None:
+        """Does not commit — batch several upserts and call commit() periodically
+        (see pipeline.run()). Committing every single row is the dominant SQLite
+        bottleneck at large file counts (one fsync per row); batching is what makes
+        this scale to hundreds of thousands of files without the DB becoming the
+        slow part of the run."""
         row = rec.as_row()
         cols = list(row.keys())
         placeholders = ", ".join(f":{c}" for c in cols)
@@ -118,14 +133,13 @@ class Manifest:
             f"ON CONFLICT(file_id) DO UPDATE SET {updates}"
         )
         self.conn.execute(sql, row)
-        self.conn.commit()
 
     def mark_deleted(self, file_id: str, last_processed: str) -> None:
+        """Does not commit — see upsert()."""
         self.conn.execute(
             "UPDATE files SET status = 'deleted', last_processed = ? WHERE file_id = ? AND status != 'deleted'",
             (last_processed, file_id),
         )
-        self.conn.commit()
 
     def all_file_ids(self) -> set[str]:
         cur = self.conn.execute("SELECT file_id FROM files WHERE status != 'deleted'")

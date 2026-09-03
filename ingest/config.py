@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import dataclasses
+import os
 from pathlib import Path
 
 import yaml
@@ -34,6 +35,8 @@ class Config:
     ocr_confidence_low: float
     tesseract_lang: str
 
+    max_workers: int
+
     @classmethod
     def load(cls, path: str | Path) -> "Config":
         raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
@@ -59,4 +62,5 @@ class Config:
             ocr_confidence_high=float(raw["ocr_confidence_high"]),
             ocr_confidence_low=float(raw["ocr_confidence_low"]),
             tesseract_lang=raw["tesseract_lang"],
+            max_workers=int(raw["max_workers"]) if raw.get("max_workers") else (os.cpu_count() or 4),
         )
