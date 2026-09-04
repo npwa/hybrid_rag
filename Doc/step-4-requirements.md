@@ -10,10 +10,10 @@ Step 6 (LLM answer generation) — both out of scope here.
 
 ## 1. Scope & Environment
 
-- **Ollama endpoint — corrected:** `http://localhost:8080` is **Open WebUI**'s frontend
-  (confirmed by curl — it returns an HTML page, not a JSON API response), not Ollama
-  itself. Ollama's actual API is at the default `http://localhost:11434`, confirmed live
-  and responding (`/api/tags` lists 18 pulled models). **Use `:11434` for this step.**
+- **Ollama Open WebUI:** available at `http://localhost:8080` (confirmed by curl — it
+  returns an HTML page).  Ollama's API is at the default `http://localhost:11434`,
+  confirmed live and responding (`/api/tags` lists 18 pulled models). **Use `:11434` for
+  this step.**
 - **Input:** the `chunks` table from Step 3, specifically rows with
   `embedding_status='pending'`.
 - Runs on the desktop — the RTX 3080 is available for local embedding inference via
@@ -33,8 +33,8 @@ generation, but that's out of scope here).
 
 ### 2b. Vector DB
 
-**Recommend LanceDB over Chroma** — revised from an earlier "either works" framing once
-the actual target scale (§7: potentially 5–20M chunks, not 10-40K) is accounted for.
+We will use **LanceDB** (not Chroma) — revised from an earlier "either works" framing
+once the actual target scale (§7: potentially 5–20M chunks, not 10-40K) is accounted for.
 Chroma's default index (`hnswlib`) is memory-resident — the whole vector index has to fit
 in RAM. LanceDB stores vectors on disk in a memory-mapped columnar format and doesn't
 require full in-RAM residency, which matters directly here: see §7 for why a 5–20M-chunk
@@ -42,10 +42,6 @@ index can approach or exceed this machine's 62GB RAM under Chroma's model. Neith
 a separate server process (ruling out Qdrant/Milvus/Weaviate as unnecessary overhead at
 single-user scale), so this is specifically about which embedded engine, not
 embedded-vs-server.
-
-If the corpus turns out much smaller than the 1M-document target in practice, Chroma's
-simplicity is still a fine choice — the recommendation above is scale-driven, not a
-strict rule.
 
 Store alongside each vector: `chunk_id`, `file_id`, `rel_path`, `category`, `extension`,
 `tags`, `sheet_name`, `ocr_confidence` — everything needed for query-time
@@ -134,7 +130,7 @@ implied elsewhere in this doc. That changes the calculus for both legs:
 
 1. ~~Confirm the Ollama endpoint~~ — resolved, see §1 (`:11434`).
 2. ~~Confirm which embedding model~~ — resolved, see §2a (`nomic-embed-text`).
-3. ~~Chroma vs. LanceDB~~ — resolved, see §2b/§7 (LanceDB, driven by the revised scale
+3. ~~Chroma vs. LanceDB~~ — confirmed, see §2b/§7 (LanceDB, driven by the revised scale
    estimate).
 4. ~~FTS5 vs. `rank_bm25`~~ — resolved, see §3 (FTS5: better resilience against
    low-confidence-OCR vocabulary noise, and a real incremental-update story at the

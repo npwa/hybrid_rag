@@ -8,10 +8,10 @@ different retrieval methods and merges their results before generating an answer
 ```mermaid
 graph LR
     Query[Query] --> EM[Embedding Model]
-    EM --> VDB[Vector DB]
+    EM --> VDB[LanceDB]
     VDB --> DR[Dense Results]
     
-    Query --> BM25[BM25 Index - SQLite FTS5]
+    Query --> BM25[FTS5 Index]
     BM25 --> SR[Sparse Results]
     
     DR --> RRF[Reciprocal Rank Fusion]
