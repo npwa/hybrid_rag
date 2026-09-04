@@ -111,25 +111,21 @@ pip install -r requirements.txt
 | `Pillow` | Image preprocessing before OCR |
 | `PyYAML` | Config file loading (`ingest_config.yaml`, `chunk_config.yaml`) |
 | `charset-normalizer` | Encoding detection for plain-text files that aren't UTF-8 |
+| `lancedb` | Dense-leg vector store (Step 4 §2b) — embedded, disk-backed, no server process. Confirmed installed: `0.38.0`. |
 
 Step 3 (chunking) needs no packages beyond this list — it's pure-Python text processing
 plus the standard library (`sqlite3`, `hashlib`, `concurrent.futures`, `re`).
 
-### Planned, not yet added (Step 4 — indexing)
+Step 4 (indexing) added only `lancedb` above. The Ollama HTTP client question from the
+previous version of this section is resolved: stdlib `urllib.request` turned out to be
+sufficient (`indexing/embedder.py`) — no new dependency needed. FTS5 (the sparse leg)
+needs no package at all — it's the stdlib `sqlite3` module (§3 above), used directly via
+`ingest/manifest.py`'s FTS5 methods rather than a separate library.
 
-Confirmed technology choices exist (`Doc/step-4-requirements.md`), but the implementation
-hasn't been written yet, so exact package pins aren't final. Expect at minimum:
-
-| Package | Why | Status |
-|---|---|---|
-| `lancedb` | Confirmed vector DB (§2b of the Step 4 doc) — embedded, disk-backed, no server process | Confirmed on PyPI (latest: 0.38.0), not yet installed |
-| *(HTTP client for Ollama)* | Calling Ollama's `/api/embed` endpoint | Not yet decided — stdlib `urllib.request` may be sufficient without adding a dependency; revisit when Step 4 is implemented |
-
-FTS5 (the sparse leg) needs no new package — it's the stdlib `sqlite3` module (§3 above).
-
-This section will be updated with final, verified package names and versions once Step 4
-is actually built and tested, the same way §5's "Currently required" table was for Steps
-1–3.
+Step 4 has been implemented and verified: 17,693 chunks embedded via Ollama
+(`nomic-embed-text`) into both LanceDB and FTS5 in ~2 minutes, 0 failures, idempotent
+reruns confirmed, and the delete-cleanup path (chunks marked `deleted` get removed from
+both stores, then purged) verified via a synthetic test.
 
 ## 6. Configuration
 
@@ -142,7 +138,8 @@ cp config/ingest_config.example.yaml config/ingest_config.yaml
 # edit config/ingest_config.yaml: set source_root to your own document tree
 ```
 
-`chunk_config.yaml` has no personal paths and is tracked directly — usable as-is.
+`chunk_config.yaml` and `index_config.yaml` have no personal paths and are tracked
+directly — usable as-is.
 
 ## 7. Running the pipeline
 
@@ -150,8 +147,10 @@ cp config/ingest_config.example.yaml config/ingest_config.yaml
 source .venv/bin/activate
 ./run_ingest.py --config config/ingest_config.yaml     # Step 1/2: discover, classify, extract
 ./run_chunk.py  --config config/chunk_config.yaml       # Step 3: split into retrieval chunks
+./run_index.py  --config config/index_config.yaml       # Step 4: embed + index (dense + sparse)
 ```
 
-Both are safe to re-run at any time — both are idempotent, only processing new/changed
-files (`Doc/step-1-requirements.md` §8, `Doc/step-3-requirements.md` §5). Step 4's
-entrypoint (embedding + indexing) will be added here once it exists.
+All three are safe to re-run at any time — all are idempotent, only processing
+new/changed data (`Doc/step-1-requirements.md` §8, `Doc/step-3-requirements.md` §5,
+`Doc/step-4-requirements.md` §4). Step 5's entrypoint (`run_query.py` — retrieval,
+fusion, and answer generation) will be added here once it exists.

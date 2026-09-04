@@ -7,3 +7,4 @@ openpyxl
 Pillow
 PyYAML
 charset-normalizer
+lancedb

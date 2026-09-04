@@ -238,14 +238,12 @@ class Manifest:
         cur = self.conn.execute("SELECT file_id FROM files WHERE status = 'deleted'")
         return {r["file_id"] for r in cur.fetchall()}
 
-    def delete_chunks_for_file(self, file_id: str) -> None:
-        """Does not commit — see upsert()."""
-        self.conn.execute("DELETE FROM chunks WHERE file_id = ?", (file_id,))
-
     def insert_chunk(self, rec: ChunkRecord) -> None:
-        """Does not commit — see upsert(). Chunk rows are never updated in place —
-        a changed file's old chunks are deleted (delete_chunks_for_file) and new
-        ones inserted with fresh chunk_ids, so this is a plain INSERT."""
+        """Does not commit — see upsert(). Chunk rows are never updated in place — a
+        changed file's old chunks are soft-deleted (mark_chunks_deleted_for_file, same
+        as a removed source file — Step 4 needs the embedding_status='deleted' signal to
+        clean up anything already embedded/indexed under the old chunk_ids) and new ones
+        inserted with fresh chunk_ids, so this is always a plain INSERT, never an UPDATE."""
         row = rec.as_row()
         cols = list(row.keys())
         placeholders = ", ".join(f":{c}" for c in cols)
@@ -259,19 +257,53 @@ class Manifest:
         )
         return cur.rowcount
 
-    def chunk_embedding_statuses_for_file(self, file_id: str) -> set[str]:
-        """Distinct source_content_hash values currently stored for this file's chunks
-        — empty if it has never been chunked. Used by the chunking worker to decide
-        unchanged/changed/new without loading the whole chunks table (§5, §8)."""
-        cur = self.conn.execute(
-            "SELECT DISTINCT source_content_hash FROM chunks WHERE file_id = ? AND embedding_status != 'deleted'",
-            (file_id,),
-        )
-        return {r["source_content_hash"] for r in cur.fetchall()}
-
     def chunk_counts(self) -> dict[str, int]:
         cur = self.conn.execute("SELECT embedding_status, COUNT(*) AS n FROM chunks GROUP BY embedding_status")
         return {r["embedding_status"]: r["n"] for r in cur.fetchall()}
+
+    def chunks_by_status(self, status: str, limit: int, after_chunk_id: str = "") -> list[sqlite3.Row]:
+        """Keyset-paginated (not OFFSET) so this stays a bounded, indexed read
+        regardless of how large the `chunks` table gets (§8 of step-3-requirements.md)."""
+        cur = self.conn.execute(
+            "SELECT * FROM chunks WHERE embedding_status = ? AND chunk_id > ? ORDER BY chunk_id LIMIT ?",
+            (status, after_chunk_id, limit),
+        )
+        return cur.fetchall()
+
+    def mark_chunks_embedded(self, chunk_ids: list[str]) -> None:
+        """Does not commit — see upsert()."""
+        self.conn.executemany(
+            "UPDATE chunks SET embedding_status = 'embedded' WHERE chunk_id = ?",
+            [(c,) for c in chunk_ids],
+        )
+
+    def purge_chunks(self, chunk_ids: list[str]) -> None:
+        """Does not commit — see upsert(). For `deleted` chunks Step 4 has already
+        removed from the vector/FTS5 stores — their job (signal "please clean this up")
+        is done, so the row itself is no longer needed. History for a removed file is
+        already preserved at the `files` table level (status='deleted' there); a chunk_id
+        has no independent meaning once decoupled from a live file."""
+        self.conn.executemany("DELETE FROM chunks WHERE chunk_id = ?", [(c,) for c in chunk_ids])
+
+    # --- FTS5 (Step 4 sparse leg) -------------------------------------------------
+
+    def ensure_fts5(self, table: str) -> None:
+        self.conn.execute(
+            f"CREATE VIRTUAL TABLE IF NOT EXISTS {table} USING "
+            "fts5(chunk_id UNINDEXED, text, rel_path UNINDEXED, tags UNINDEXED)"
+        )
+        self.conn.commit()
+
+    def fts5_insert_batch(self, table: str, rows: list[dict]) -> None:
+        """Does not commit — see upsert()."""
+        self.conn.executemany(
+            f"INSERT INTO {table} (chunk_id, text, rel_path, tags) VALUES (:chunk_id, :text, :rel_path, :tags)",
+            rows,
+        )
+
+    def fts5_delete_chunk_ids(self, table: str, chunk_ids: list[str]) -> None:
+        """Does not commit — see upsert()."""
+        self.conn.executemany(f"DELETE FROM {table} WHERE chunk_id = ?", [(c,) for c in chunk_ids])
 
 
 @contextlib.contextmanager

@@ -10,6 +10,7 @@ manifest.db-journal
 manifest.db-wal
 manifest.db-shm
 logs/
+lancedb/
 
 # Real ingest config — contains a personal filesystem path (source_root).
 # Copy config/ingest_config.example.yaml to config/ingest_config.yaml to run locally.

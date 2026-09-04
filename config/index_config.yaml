@@ -1,0 +1,19 @@
+# Step 4 indexing configuration — see Doc/step-4-requirements.md for the full spec.
+
+working_dir: ~/work/hybrid_rag
+manifest_db: manifest.db     # relative to working_dir; same DB as Steps 1/3 — FTS5 lives here too
+logs_dir: logs                # relative to working_dir
+
+# --- Dense leg: LanceDB (§2b) ---
+lancedb_dir: lancedb          # relative to working_dir; LanceDB's own on-disk directory
+lancedb_table: chunks
+embed_dim: 768                # nomic-embed-text's output dimension
+
+# --- Sparse leg: SQLite FTS5 (§3) ---
+fts5_table: chunks_fts        # virtual table created inside manifest.db
+
+# --- Embedding (§2a, §5) ---
+ollama_url: http://localhost:11434   # NOT :8080 (Open WebUI) — see §1
+embedding_model: nomic-embed-text
+embed_batch_size: 32          # chunks per Ollama /api/embed call
+embed_timeout_seconds: 60

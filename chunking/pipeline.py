@@ -168,7 +168,13 @@ def run(config: ChunkConfig, manifest: Manifest, limit: int | None = None) -> di
                 counts[wr.status] = counts.get(wr.status, 0) + 1
 
                 if wr.status == "chunked":
-                    manifest.delete_chunks_for_file(wr.file_id)
+                    # Soft-delete (not hard-delete) any prior chunks for this file: a
+                    # changed file's old chunk_ids may already be embedded/indexed in
+                    # Step 4's stores, and those need the same embedding_status='deleted'
+                    # cleanup signal a removed source file gets (§5) — hard-deleting the
+                    # row here would silently orphan those entries with nothing left in
+                    # `chunks` for Step 4 to notice and clean up.
+                    manifest.mark_chunks_deleted_for_file(wr.file_id)
                     for rec in wr.chunk_rows:
                         manifest.insert_chunk(rec)
                     chunks_created += len(wr.chunk_rows)
