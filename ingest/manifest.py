@@ -38,6 +38,27 @@ CREATE TABLE IF NOT EXISTS files (
 CREATE INDEX IF NOT EXISTS idx_files_status ON files(status);
 CREATE INDEX IF NOT EXISTS idx_files_category ON files(category);
 CREATE INDEX IF NOT EXISTS idx_files_rel_path ON files(rel_path);
+
+CREATE TABLE IF NOT EXISTS chunks (
+    chunk_id             TEXT PRIMARY KEY,
+    file_id              TEXT NOT NULL,
+    chunk_index          INTEGER NOT NULL,
+    text                 TEXT NOT NULL,
+    char_start           INTEGER,
+    char_end             INTEGER,
+    source_content_hash  TEXT,
+    rel_path             TEXT,
+    category             TEXT,
+    extension            TEXT,
+    tags                 TEXT,
+    sheet_name           TEXT,
+    ocr_used             INTEGER NOT NULL DEFAULT 0,
+    ocr_confidence       REAL,
+    embedding_status     TEXT NOT NULL DEFAULT 'pending',
+    created_at           TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_chunks_file_id ON chunks(file_id);
+CREATE INDEX IF NOT EXISTS idx_chunks_embedding_status ON chunks(embedding_status);
 """
 
 # Valid `status` values (documented here since SQLite has no enum type):
@@ -83,6 +104,32 @@ class FileRecord:
         d = dataclasses.asdict(self)
         d["ocr_used"] = int(bool(d["ocr_used"]))
         d["sheet_names"] = json.dumps(d["sheet_names"]) if d["sheet_names"] is not None else None
+        d["tags"] = json.dumps(d["tags"]) if d["tags"] is not None else None
+        return d
+
+
+@dataclasses.dataclass
+class ChunkRecord:
+    chunk_id: str
+    file_id: str
+    chunk_index: int
+    text: str
+    char_start: Optional[int]
+    char_end: Optional[int]
+    source_content_hash: Optional[str]
+    rel_path: Optional[str] = None
+    category: Optional[str] = None
+    extension: Optional[str] = None
+    tags: Optional[list[str]] = None
+    sheet_name: Optional[str] = None
+    ocr_used: bool = False
+    ocr_confidence: Optional[float] = None
+    embedding_status: str = "pending"
+    created_at: Optional[str] = None
+
+    def as_row(self) -> dict:
+        d = dataclasses.asdict(self)
+        d["ocr_used"] = int(bool(d["ocr_used"]))
         d["tags"] = json.dumps(d["tags"]) if d["tags"] is not None else None
         return d
 
@@ -175,6 +222,56 @@ class Manifest:
                 f.write(json.dumps(dict(row)) + "\n")
                 n += 1
         return n
+
+    # --- chunks (Step 3) --------------------------------------------------
+
+    def chunkable_files(self) -> list[sqlite3.Row]:
+        """Files with real extracted text — the only rows Step 3 considers."""
+        cur = self.conn.execute(
+            "SELECT file_id, rel_path, filename, extension, category, content_hash, "
+            "extracted_text_path, ocr_used, ocr_confidence, sheet_names, tags "
+            "FROM files WHERE status IN ('extracted', 'ocr_extracted', 'ocr_low_confidence')"
+        )
+        return cur.fetchall()
+
+    def deleted_file_ids(self) -> set[str]:
+        cur = self.conn.execute("SELECT file_id FROM files WHERE status = 'deleted'")
+        return {r["file_id"] for r in cur.fetchall()}
+
+    def delete_chunks_for_file(self, file_id: str) -> None:
+        """Does not commit — see upsert()."""
+        self.conn.execute("DELETE FROM chunks WHERE file_id = ?", (file_id,))
+
+    def insert_chunk(self, rec: ChunkRecord) -> None:
+        """Does not commit — see upsert(). Chunk rows are never updated in place —
+        a changed file's old chunks are deleted (delete_chunks_for_file) and new
+        ones inserted with fresh chunk_ids, so this is a plain INSERT."""
+        row = rec.as_row()
+        cols = list(row.keys())
+        placeholders = ", ".join(f":{c}" for c in cols)
+        self.conn.execute(f"INSERT INTO chunks ({', '.join(cols)}) VALUES ({placeholders})", row)
+
+    def mark_chunks_deleted_for_file(self, file_id: str) -> int:
+        """Does not commit — see upsert(). Returns rows affected."""
+        cur = self.conn.execute(
+            "UPDATE chunks SET embedding_status = 'deleted' WHERE file_id = ? AND embedding_status != 'deleted'",
+            (file_id,),
+        )
+        return cur.rowcount
+
+    def chunk_embedding_statuses_for_file(self, file_id: str) -> set[str]:
+        """Distinct source_content_hash values currently stored for this file's chunks
+        — empty if it has never been chunked. Used by the chunking worker to decide
+        unchanged/changed/new without loading the whole chunks table (§5, §8)."""
+        cur = self.conn.execute(
+            "SELECT DISTINCT source_content_hash FROM chunks WHERE file_id = ? AND embedding_status != 'deleted'",
+            (file_id,),
+        )
+        return {r["source_content_hash"] for r in cur.fetchall()}
+
+    def chunk_counts(self) -> dict[str, int]:
+        cur = self.conn.execute("SELECT embedding_status, COUNT(*) AS n FROM chunks GROUP BY embedding_status")
+        return {r["embedding_status"]: r["n"] for r in cur.fetchall()}
 
 
 @contextlib.contextmanager

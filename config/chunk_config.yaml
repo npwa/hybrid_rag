@@ -1,0 +1,20 @@
+# Step 3 chunking configuration — see Doc/step-3-requirements.md for the full spec.
+
+working_dir: ~/work/hybrid_rag
+extracted_text_dir: extracted_text     # relative to working_dir; Step 1/2 output, read-only input here
+manifest_db: manifest.db               # relative to working_dir; same DB as Step 1, adds a `chunks` table
+logs_dir: logs                         # relative to working_dir
+
+# --- Chunk sizing (§3a) ---
+# Character-based rather than a specific tokenizer for now (embedding model chosen in
+# Step 4, not here) — see Open Questions #1 in step-3-requirements.md.
+chunk_target_chars: 1500
+chunk_overlap_chars: 200
+
+# --- Markdown section merging (§3b, Open Questions #2) ---
+# A "##" section shorter than this gets merged into the previous section rather than
+# becoming its own near-empty chunk.
+min_section_chars: 100
+
+# --- Concurrency (same model as Step 1 — see step-1-requirements.md §8a) ---
+max_workers: null

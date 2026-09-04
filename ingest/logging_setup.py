@@ -6,11 +6,11 @@ from datetime import datetime
 from pathlib import Path
 
 
-def setup_logging(logs_dir: Path, run_ts: str) -> Path:
+def setup_logging(logs_dir: Path, run_ts: str, logger_name: str = "ingest", prefix: str | None = None) -> Path:
     logs_dir.mkdir(parents=True, exist_ok=True)
-    log_path = logs_dir / f"ingest_{run_ts}.log"
+    log_path = logs_dir / f"{prefix or logger_name}_{run_ts}.log"
 
-    logger = logging.getLogger("ingest")
+    logger = logging.getLogger(logger_name)
     logger.setLevel(logging.DEBUG)
     logger.handlers.clear()
 
