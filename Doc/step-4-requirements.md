@@ -53,11 +53,24 @@ filtering/boosting by file type or folder, per the README's stated metadata desi
 
 ## 3. Sparse leg — BM25
 
-Recommend **SQLite FTS5** (`CREATE VIRTUAL TABLE ... USING fts5(...)`, built into
-Python's `sqlite3`, has a native `bm25()` ranking function) over a separate library —
-keeps everything in the same `manifest.db` file with zero new dependencies, and FTS5's
-BM25 implementation is solid at this corpus size. `rank_bm25` (pure Python, in-memory) is
-a simpler fallback if FTS5 setup proves awkward, but FTS5 is the starting recommendation.
+**Confirmed: SQLite FTS5** (`CREATE VIRTUAL TABLE ... USING fts5(...)`, built into
+Python's `sqlite3`, has a native `bm25()` ranking function) over `rank_bm25` or another
+separate library. Two reasons, both concrete rather than just "simpler":
+
+- **Low-confidence OCR resilience.** `rank_bm25` and most simple keyword-scoring libraries
+  build their vocabulary in memory from whatever text they're given, with no real query
+  planner behind them — every query is a linear scan over that in-memory structure. FTS5
+  is a proper inverted-index implementation with its own on-disk index and query
+  optimizer, so noisy/inconsistent tokens from low-confidence OCR text (§3d of
+  `step-3-requirements.md`) don't degrade lookup performance the way they would scanning
+  a naive in-memory structure — the index itself absorbs vocabulary noise rather than
+  the query path having to.
+- **Scaling on this hardware.** `rank_bm25` holds its whole corpus in memory with no
+  incremental-update story — every rebuild is a full one, which stops being practical
+  well before the 5–20M-chunk estimate in §7. FTS5 supports incremental inserts/deletes
+  directly against the index and keeps everything in the same `manifest.db` file with
+  zero new dependencies, consistent with the WAL-mode/batched-write approach already
+  adopted for the `files` and `chunks` tables (Step 1 §8a, Step 3 §8).
 
 Index the same chunk text + `chunk_id` + metadata columns as the dense leg, so both legs
 return results keyed by the same `chunk_id` — required for RRF fusion in Step 5.
@@ -123,5 +136,9 @@ implied elsewhere in this doc. That changes the calculus for both legs:
 2. ~~Confirm which embedding model~~ — resolved, see §2a (`nomic-embed-text`).
 3. ~~Chroma vs. LanceDB~~ — resolved, see §2b/§7 (LanceDB, driven by the revised scale
    estimate).
-4. **FTS5 vs. `rank_bm25`** for the sparse leg — defaulting to FTS5 unless there's a
-   reason not to.
+4. ~~FTS5 vs. `rank_bm25`~~ — resolved, see §3 (FTS5: better resilience against
+   low-confidence-OCR vocabulary noise, and a real incremental-update story at the
+   5–20M-chunk scale target, where `rank_bm25`'s full-in-memory-rebuild model breaks
+   down).
+
+All four open questions in this step are now resolved.

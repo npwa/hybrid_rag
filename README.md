@@ -11,7 +11,7 @@ graph LR
     EM --> VDB[Vector DB]
     VDB --> DR[Dense Results]
     
-    Query --> BM25[BM25 Index]
+    Query --> BM25[BM25 Index - SQLite FTS5]
     BM25 --> SR[Sparse Results]
     
     DR --> RRF[Reciprocal Rank Fusion]
