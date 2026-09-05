@@ -8,3 +8,5 @@ Pillow
 PyYAML
 charset-normalizer
 lancedb
+fastapi
+uvicorn

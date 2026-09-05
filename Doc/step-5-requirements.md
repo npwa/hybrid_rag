@@ -48,7 +48,10 @@ Given a query string, in order:
 4. **Build a prompt** from the query + the top-K chunks' text and source metadata (file
    path, so the model can cite where an answer came from).
 5. **Generate the answer** by calling Ollama's chat/completion endpoint with the prompt
-   and a chosen LLM model (see Open Questions — not yet confirmed which one).
+   and **`qwen3:8b`** (confirmed — see Open Questions #1). The request must explicitly
+   set `num_ctx` (proposed `8192`) — Ollama defaults to a 4K context window for any model
+   under the 24GiB VRAM tier, which would silently truncate a RAG prompt (query + top-K
+   chunks + system prompt) on this machine's 10GB card otherwise.
 6. **Return** `{answer, sources: [{rel_path, chunk_id, ...}]}` — never just the bare
    answer text, so every caller (§3–§5) can surface citations if it wants to.
 
@@ -119,21 +122,47 @@ new/changed files) is separate and not covered here.
 
 ## Open Questions
 
-1. **LLM model for answer generation** — not yet confirmed. Several chat/completion
-   models are already pulled locally (`qwen2.5:7b-instruct` and others — see
-   `Doc/step-4-requirements.md` §2a); which one to use for generation is still open.
-2. **HTTP framework** for the §4/§5 server (FastAPI vs. Flask vs. something else) — not
-   yet decided.
-3. **Port number** for the new HTTP service — needs to avoid `:8080` (Open WebUI) and
-   `:11434` (Ollama).
-4. **OpenClaw's actual tool/plugin calling convention** — needs investigation.
+1. ~~LLM model for answer generation~~ — **confirmed: `qwen3:8b`** (needs `ollama pull
+   qwen3:8b`, not yet pulled — 5.2GB at Q4_K_M). Researched against the actual GPU
+   budget (RTX 3080, 10GB VRAM) rather than just picking from what's already pulled:
+   - Several already-pulled models were ruled out for this specific role. The `qwen3.6`
+     family (35B-A3B and variants, 24GB) and `qwen2.5-coder:32b` (20GB) are MoE/large
+     models that don't fit in 10GB VRAM — and critically, MoE's whole point (cheap
+     per-token compute despite a large total size) only holds when it's GPU-resident;
+     forced onto CPU offload at this VRAM budget, that advantage disappears and it would
+     likely run *slower* than a properly-sized dense model despite scoring higher on
+     benchmarks. `qwen2.5:14b-instruct` (9GB) technically fits on paper but leaves too
+     little headroom for KV cache + CUDA overhead on a 10GB card to trust.
+   - `qwen3:8b` is a genuine generational upgrade over the already-pulled
+     `qwen2.5:7b-instruct` while staying dense (no offload tradeoff), fits with ~3.8GB of
+     headroom to spare, has a native 32K context window (see §2 step 5's `num_ctx` note),
+     and supports an optional "thinking" mode — left off by default for RAG (faithfulness
+     to retrieved context matters more than chain-of-thought for grounded QA), available
+     to toggle on for genuinely multi-hop questions later if needed.
+   - Fallback if pulling something new isn't wanted: `qwen2.5:7b-instruct`, already
+     pulled, comparable quality, smallest footprint (4.68GB) of the viable candidates.
+2. ~~HTTP framework~~ — **confirmed: FastAPI** (+ `uvicorn`). Good fit for an
+   OpenAI-compatible shim: automatic request validation via Pydantic, minimal
+   boilerplate for the `/v1/chat/completions` + `/v1/models` shape.
+3. ~~Port number~~ — **confirmed: `8100`** (checked free on this machine at
+   implementation time; avoids `:8080` Open WebUI and `:11434` Ollama).
+4. **OpenClaw's actual tool/plugin calling convention** — still needs investigation.
    §5 proposes reusing the OpenAI-compatible endpoint, but this depends on what OpenClaw
-   itself supports for calling out to external tools.
-5. **Streaming responses** — starting non-streaming (§4) for simplicity; worth revisiting
-   once the basic path works, since streaming is generally expected of a chat UI.
-6. **Prompt design** (system prompt wording, how citations are formatted for the model)
-   — needs iteration against real queries once implemented; not fully specifiable in
-   advance.
-7. **Top-K value** (proposed default 8) and RRF's `k` constant (proposed standard value
-   60) — reasonable starting defaults, worth tuning empirically once there's a way to
-   evaluate answer quality.
+   itself supports for calling out to external tools. Not blocking — the endpoint exists
+   and works regardless of how OpenClaw ends up calling it.
+5. **Streaming responses** — implemented non-streaming (§4) for v1; confirmed working
+   end-to-end (CLI and HTTP both tested against the real corpus, ~6-8s per query
+   end-to-end including generation). Worth revisiting later since streaming is generally
+   expected of a chat UI, but not required for a working v1.
+6. **Prompt design** — a first version is implemented (`query/generation.py`): cite
+   sources by `[N]` marker, explicit instruction to say "I don't know" rather than guess
+   when the answer isn't in the retrieved excerpts. Verified working as intended in
+   testing — a query with no clear answer in the source documents correctly produced "the
+   specific insurance company is not named in the sources" rather than a hallucinated
+   answer. Still worth iterating on with more real queries.
+7. **Top-K value** (8) and RRF's `k` constant (60) — implemented as the defaults
+   proposed. Real testing shows retrieval sometimes pulls in tangentially-related
+   documents (e.g. large financial PDFs matching on generic terms) alongside the
+   genuinely relevant ones; the LLM correctly ignored the noise in testing so far, but
+   this is the first real tuning candidate if answer quality issues show up — narrowing
+   `top_n_dense`/`top_n_sparse` or `top_k_fused` would be the first thing to try.

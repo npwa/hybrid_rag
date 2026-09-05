@@ -82,12 +82,15 @@ how that distinction was discovered).
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh
 ollama pull nomic-embed-text     # embedding model — confirmed choice, Step 4 §2a
+ollama pull qwen3:8b             # generation model — confirmed choice, Step 5 (Doc/step-5-requirements.md, Open Q1)
 ```
 
-Confirmed installed version: `0.32.5`. A chat/completion model (for Step 6, LLM answer
-generation — not yet implemented) will be added to this section when that step is built;
-`qwen2.5:7b-instruct` and several others are already pulled on the development machine as
-candidates, but none is confirmed as *the* choice yet.
+Confirmed installed version: `0.32.5`. `qwen3:8b` (5.2GB at Q4_K_M) was chosen for
+generation specifically against this machine's 10GB VRAM budget — several larger/MoE
+models already pulled here (the `qwen3.6` family, `qwen2.5-coder:32b`) don't fit or lose
+their speed advantage under the CPU offload that would require; see the Step 5 doc for
+the full reasoning. Now pulled and confirmed working (Step 5 is implemented and tested
+end-to-end against it).
 
 ## 5. Python packages
 
@@ -112,13 +115,16 @@ pip install -r requirements.txt
 | `PyYAML` | Config file loading (`ingest_config.yaml`, `chunk_config.yaml`) |
 | `charset-normalizer` | Encoding detection for plain-text files that aren't UTF-8 |
 | `lancedb` | Dense-leg vector store (Step 4 §2b) — embedded, disk-backed, no server process. Confirmed installed: `0.38.0`. |
+| `fastapi` | OpenAI-compatible HTTP server (Step 5 §4/§5). Confirmed installed: `0.141.1`. |
+| `uvicorn` | ASGI server to run the FastAPI app. Confirmed installed: `0.52.4`. |
 
 Step 3 (chunking) needs no packages beyond this list — it's pure-Python text processing
 plus the standard library (`sqlite3`, `hashlib`, `concurrent.futures`, `re`).
 
 Step 4 (indexing) added only `lancedb` above. The Ollama HTTP client question from the
 previous version of this section is resolved: stdlib `urllib.request` turned out to be
-sufficient (`indexing/embedder.py`) — no new dependency needed. FTS5 (the sparse leg)
+sufficient (`indexing/embedder.py`) — no new dependency needed, and the same module is
+reused as-is by Step 5's query engine for embedding the query text. FTS5 (the sparse leg)
 needs no package at all — it's the stdlib `sqlite3` module (§3 above), used directly via
 `ingest/manifest.py`'s FTS5 methods rather than a separate library.
 
@@ -126,6 +132,13 @@ Step 4 has been implemented and verified: 17,693 chunks embedded via Ollama
 (`nomic-embed-text`) into both LanceDB and FTS5 in ~2 minutes, 0 failures, idempotent
 reruns confirmed, and the delete-cleanup path (chunks marked `deleted` get removed from
 both stores, then purged) verified via a synthetic test.
+
+Step 5 (retrieval, fusion, generation, and its three access points) added `fastapi` and
+`uvicorn` above, and has been implemented and verified: real queries against the real
+corpus return grounded, cited answers via both the CLI (`run_query.py`) and the
+OpenAI-compatible HTTP endpoint (`run_server.py`, for Open WebUI/OpenClaw), in ~6-8s
+end-to-end. The generation model correctly declined to guess when an answer wasn't
+actually in the retrieved source excerpts, rather than hallucinating one.
 
 ## 6. Configuration
 
@@ -148,9 +161,18 @@ source .venv/bin/activate
 ./run_ingest.py --config config/ingest_config.yaml     # Step 1/2: discover, classify, extract
 ./run_chunk.py  --config config/chunk_config.yaml       # Step 3: split into retrieval chunks
 ./run_index.py  --config config/index_config.yaml       # Step 4: embed + index (dense + sparse)
+
+# Step 5 — ask a question (access point 1: CLI)
+./run_query.py --config config/query_config.yaml --query "..." --sources
+
+# Step 5 — OpenAI-compatible HTTP server (access points 2 & 3: Open WebUI / OpenClaw)
+./run_server.py --config config/query_config.yaml
+# then in Open WebUI: Settings -> Connections -> add http://127.0.0.1:8100/v1 as an
+# OpenAI API connection; "hybrid-rag" appears in the model picker.
 ```
 
-All three are safe to re-run at any time — all are idempotent, only processing
+The first three are safe to re-run at any time — all are idempotent, only processing
 new/changed data (`Doc/step-1-requirements.md` §8, `Doc/step-3-requirements.md` §5,
-`Doc/step-4-requirements.md` §4). Step 5's entrypoint (`run_query.py` — retrieval,
-fusion, and answer generation) will be added here once it exists.
+`Doc/step-4-requirements.md` §4). `run_query.py`/`run_server.py` are read-only against
+the indexes — nothing to re-run, just start the server whenever you want to ask
+questions.

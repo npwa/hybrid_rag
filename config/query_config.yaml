@@ -1,0 +1,31 @@
+# Step 5 query-engine configuration — see Doc/step-5-requirements.md for the full spec.
+
+working_dir: ~/work/hybrid_rag
+manifest_db: manifest.db     # relative to working_dir; FTS5 lives here (Step 4)
+logs_dir: logs                # relative to working_dir
+
+# --- Indexes to query (Step 4 output) ---
+lancedb_dir: lancedb
+lancedb_table: chunks
+fts5_table: chunks_fts
+
+# --- Embedding (must match Step 4's indexing model) ---
+ollama_url: http://localhost:11434   # NOT :8080 (Open WebUI)
+embedding_model: nomic-embed-text
+embed_timeout_seconds: 60
+
+# --- Generation (§2 step 5, Open Question #1 — confirmed) ---
+generation_model: qwen3:8b
+num_ctx: 8192          # explicit override — Ollama defaults to 4K under 24GiB VRAM
+think: false            # faithfulness to retrieved context > chain-of-thought for RAG
+generation_timeout_seconds: 120
+
+# --- Retrieval + fusion (§2 steps 1-3) ---
+top_n_dense: 20
+top_n_sparse: 20
+rrf_k: 60               # standard RRF constant
+top_k_fused: 8          # chunks sent to the LLM after fusion
+
+# --- HTTP server (§4/§5) ---
+http_host: 127.0.0.1
+http_port: 8100         # NOT :8080 (Open WebUI) or :11434 (Ollama)
