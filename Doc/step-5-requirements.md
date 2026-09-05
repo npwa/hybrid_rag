@@ -39,21 +39,70 @@ Given a query string, in order:
 1. **Embed the query** via Ollama's `nomic-embed-text` (same model as Step 4's indexing,
    for a query/document embedding-space match) and search the LanceDB index for the
    top-N dense results.
-2. **Query the FTS5 index** with the same query text (BM25-ranked) for the top-N sparse
+2. **Relevance gate** (`query/relevance.py`): before doing anything else, check whether
+   the corpus actually has anything relevant — see §2a. This determines which of the
+   remaining steps run.
+3. **Query the FTS5 index** with the same query text (BM25-ranked) for the top-N sparse
    results.
-3. **Fuse with Reciprocal Rank Fusion**: for each chunk appearing in either ranked list,
+4. **Fuse with Reciprocal Rank Fusion**: for each chunk appearing in either ranked list,
    `score = Σ 1 / (k + rank)` across the lists it appears in, using the standard `k = 60`
    constant. Sort by fused score, take the **top-K** (proposed default `K = 8`, tunable —
    see Open Questions).
-4. **Build a prompt** from the query + the top-K chunks' text and source metadata (file
+5. **Build a prompt** from the query + the top-K chunks' text and source metadata (file
    path, so the model can cite where an answer came from).
-5. **Generate the answer** by calling Ollama's chat/completion endpoint with the prompt
+6. **Generate the answer** by calling Ollama's chat/completion endpoint with the prompt
    and **`qwen3:8b`** (confirmed — see Open Questions #1). The request must explicitly
    set `num_ctx` (proposed `8192`) — Ollama defaults to a 4K context window for any model
    under the 24GiB VRAM tier, which would silently truncate a RAG prompt (query + top-K
    chunks + system prompt) on this machine's 10GB card otherwise.
-6. **Return** `{answer, sources: [{rel_path, chunk_id, ...}]}` — never just the bare
+7. **Return** `{answer, sources: [{rel_path, chunk_id, ...}]}` — never just the bare
    answer text, so every caller (§3–§5) can surface citations if it wants to.
+
+### 2a. Relevance gate & opt-in general-knowledge fallback
+
+**Design decision, confirmed:** by default, this system answers *only* from the
+document collection — if nothing relevant is indexed, it says so rather than letting
+the underlying LLM (which has its own general knowledge) fill the gap. This matters
+specifically because the failure mode of a personal document assistant quietly guessing
+a plausible-sounding but fabricated detail (a tax figure, a policy number) is far worse
+than it refusing to answer. This is enforced by a system prompt instruction
+(`query/generation.py`), not a structural limit — the underlying model can and does
+know things the corpus doesn't cover.
+
+An **opt-in** fallback (`allow_general_knowledge_fallback: false` by default,
+`config/query_config.yaml`) lets the model answer from its own knowledge when the
+corpus has nothing relevant — useful since a personal-document assistant is still more
+broadly useful if it can also just answer a stray general question. When triggered, the
+answer is always prefixed `"General knowledge (not from your documents):"` — prepended
+in code (`generation.label_general_knowledge`), not left to the model to remember to
+say, so a document-grounded answer can never be confused with one that isn't.
+
+**Detecting "nothing relevant"** turned out to need real calibration, not a guess: RRF's
+fused score (step 4) is rank-based, so it always produces a normal-looking top-K even
+when nothing in the corpus is actually relevant — a "best of a bad lot" still ranks
+first. The gate instead looks at the *raw* dense-search distances (step 1), before
+fusion, since those have an interpretable absolute scale. A single top-1 distance
+threshold alone proved unreliable — tested against a real off-topic query ("who was
+Mozart"), the single best match landed at a deceptively low distance (0.49, better than
+some genuinely relevant queries) purely by coincidence on a short/generic chunk.
+Requiring **at least 2 of the top dense results** to clear a `0.7` distance threshold
+correctly separated every query tested:
+
+| query | top-3 distances | hits < 0.7 | verdict |
+|---|---|---|---|
+| adjusted gross income 2024 | 0.58, 0.60, 0.60 | 3 | relevant |
+| who monitors the home alarm system | 0.65, 0.65, 0.79 | 2 | relevant |
+| who was wolfgang amadeus mozart | 0.49, 0.91, 0.97 | 1 | not relevant |
+| how many moons does jupiter have | 0.91, 0.92, 0.93 | 0 | not relevant |
+
+Both threshold values (`relevance_distance_threshold: 0.7`, `relevance_min_hits: 2`) are
+config, not hardcoded — like the OCR confidence thresholds in Step 1, this is a starting
+point calibrated against real queries, not a fixed rule, and may need retuning as the
+corpus grows.
+
+When the gate says "not relevant" and the fallback is off (default), the query never
+reaches the LLM at all — confirmed in testing to return in ~1.3s vs. ~6s for a real
+generation call, since there's nothing to ground an answer in.
 
 This engine takes zero dependency on how it's invoked — no HTTP, no CLI parsing, no
 Signal-specific code lives here. It should be usable as a plain importable Python

@@ -26,6 +26,16 @@ top_n_sparse: 20
 rrf_k: 60               # standard RRF constant
 top_k_fused: 8          # chunks sent to the LLM after fusion
 
+# --- Opt-in general-knowledge fallback (query/relevance.py) ---
+# Off by default: strict document-grounding is the point of this project (see
+# Doc/step-5-requirements.md's design note). When on, a query the knowledge base has
+# nothing relevant for gets answered from the model's own general knowledge instead,
+# always visibly prefixed "General knowledge (not from your documents):" so a
+# document-grounded answer can never be confused with one that wasn't.
+allow_general_knowledge_fallback: false
+relevance_distance_threshold: 0.7   # calibrated empirically — see query/relevance.py
+relevance_min_hits: 2                # >=N of the top dense results must clear the threshold
+
 # --- HTTP server (§4/§5) ---
 http_host: 127.0.0.1
 http_port: 8100         # NOT :8080 (Open WebUI) or :11434 (Ollama)

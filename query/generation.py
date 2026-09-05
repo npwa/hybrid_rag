@@ -13,6 +13,16 @@ _SYSTEM_PROMPT = (
     "not contained in the excerpts, say you don't know rather than guessing."
 )
 
+# Opt-in fallback (query/relevance.py gates when this is used) — deliberately does NOT
+# get to blend with document-grounded content: it's a completely separate prompt path
+# with no excerpts attached, so there's no way for the model to mix a fabricated detail
+# into what looks like a sourced answer.
+_GENERAL_KNOWLEDGE_SYSTEM_PROMPT = (
+    "The user's personal document collection does not contain anything relevant to "
+    "this question. Answer from your own general knowledge instead."
+)
+_GENERAL_KNOWLEDGE_PREFIX = "General knowledge (not from your documents):\n\n"
+
 
 class GenerationError(Exception):
     pass
@@ -23,6 +33,17 @@ def build_prompt(query: str, chunks: list[dict]) -> tuple[str, str]:
     context = "\n\n".join(blocks)
     user = f"Source excerpts:\n\n{context}\n\nQuestion: {query}"
     return _SYSTEM_PROMPT, user
+
+
+def build_general_knowledge_prompt(query: str) -> tuple[str, str]:
+    return _GENERAL_KNOWLEDGE_SYSTEM_PROMPT, query
+
+
+def label_general_knowledge(answer: str) -> str:
+    """Prepend the fallback-mode flag in code, not just via the prompt — guarantees
+    it's always visible regardless of whether the model would have mentioned it
+    unprompted."""
+    return _GENERAL_KNOWLEDGE_PREFIX + answer
 
 
 def generate_answer(system: str, user: str, config: QueryConfig) -> str:

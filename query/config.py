@@ -33,6 +33,12 @@ class QueryConfig:
     rrf_k: int
     top_k_fused: int
 
+    # Opt-in general-knowledge fallback (query/relevance.py) — off by default. See
+    # Doc/step-5-requirements.md for why strict document-grounding is the default.
+    allow_general_knowledge_fallback: bool
+    relevance_distance_threshold: float
+    relevance_min_hits: int
+
     http_host: str
     http_port: int
 
@@ -60,6 +66,9 @@ class QueryConfig:
             top_n_sparse=int(raw["top_n_sparse"]),
             rrf_k=int(raw["rrf_k"]),
             top_k_fused=int(raw["top_k_fused"]),
+            allow_general_knowledge_fallback=bool(raw.get("allow_general_knowledge_fallback", False)),
+            relevance_distance_threshold=float(raw.get("relevance_distance_threshold", 0.7)),
+            relevance_min_hits=int(raw.get("relevance_min_hits", 2)),
             http_host=raw["http_host"],
             http_port=int(raw["http_port"]),
         )

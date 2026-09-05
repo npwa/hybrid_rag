@@ -21,9 +21,13 @@ def main() -> int:
     parser.add_argument("--config", default="config/query_config.yaml", help="Path to query_config.yaml")
     parser.add_argument("--query", required=True, help="The question to ask")
     parser.add_argument("--sources", action="store_true", help="Also print the retrieved source files")
+    parser.add_argument("--allow-general-knowledge", action="store_true",
+                         help="Override config: let the model answer from general knowledge when nothing relevant is found")
     args = parser.parse_args()
 
     config = QueryConfig.load(args.config)
+    if args.allow_general_knowledge:
+        config.allow_general_knowledge_fallback = True
     setup_query_logging(config.logs_dir)
 
     result = answer_query(args.query, config)
