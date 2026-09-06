@@ -115,8 +115,9 @@ pip install -r requirements.txt
 | `PyYAML` | Config file loading (`ingest_config.yaml`, `chunk_config.yaml`) |
 | `charset-normalizer` | Encoding detection for plain-text files that aren't UTF-8 |
 | `lancedb` | Dense-leg vector store (Step 4 §2b) — embedded, disk-backed, no server process. Confirmed installed: `0.38.0`. |
-| `fastapi` | OpenAI-compatible HTTP server (Step 5 §4/§5). Confirmed installed: `0.141.1`. |
+| `fastapi` | OpenAI-compatible HTTP server for Open WebUI (Step 5 §4). Confirmed installed: `0.141.1`. |
 | `uvicorn` | ASGI server to run the FastAPI app. Confirmed installed: `0.52.4`. |
+| `mcp` | MCP server for OpenClaw (Step 5 §5) — access point 3 connects over the Model Context Protocol, not the OpenAI-compatible endpoint. Confirmed installed: `2.1.1` (API is `mcp.server.mcpserver.MCPServer`; older `mcp` 1.x used `FastMCP` under a different import path). |
 
 Step 3 (chunking) needs no packages beyond this list — it's pure-Python text processing
 plus the standard library (`sqlite3`, `hashlib`, `concurrent.futures`, `re`).
@@ -133,12 +134,15 @@ Step 4 has been implemented and verified: 17,693 chunks embedded via Ollama
 reruns confirmed, and the delete-cleanup path (chunks marked `deleted` get removed from
 both stores, then purged) verified via a synthetic test.
 
-Step 5 (retrieval, fusion, generation, and its three access points) added `fastapi` and
-`uvicorn` above, and has been implemented and verified: real queries against the real
-corpus return grounded, cited answers via both the CLI (`run_query.py`) and the
-OpenAI-compatible HTTP endpoint (`run_server.py`, for Open WebUI/OpenClaw), in ~6-8s
-end-to-end. The generation model correctly declined to guess when an answer wasn't
-actually in the retrieved source excerpts, rather than hallucinating one.
+Step 5 (retrieval, fusion, generation, and its three access points) added `fastapi`,
+`uvicorn`, and `mcp` above, and has been implemented and verified: real queries against
+the real corpus return grounded, cited answers via the CLI (`run_query.py`), the
+OpenAI-compatible HTTP endpoint for Open WebUI (`run_server.py`), and the MCP server for
+OpenClaw (`run_mcp_server.py`) — all three tested end-to-end, ~6-8s per query. The
+generation model correctly declined to guess when an answer wasn't actually in the
+retrieved source excerpts, rather than hallucinating one. An opt-in relevance-gated
+general-knowledge fallback exists for queries the document collection has nothing on
+(off by default — see Doc/step-5-requirements.md §2a).
 
 ## 6. Configuration
 
@@ -165,14 +169,20 @@ source .venv/bin/activate
 # Step 5 — ask a question (access point 1: CLI)
 ./run_query.py --config config/query_config.yaml --query "..." --sources
 
-# Step 5 — OpenAI-compatible HTTP server (access points 2 & 3: Open WebUI / OpenClaw)
+# Step 5 — OpenAI-compatible HTTP server (access point 2: Open WebUI)
 ./run_server.py --config config/query_config.yaml
 # then in Open WebUI: Settings -> Connections -> add http://127.0.0.1:8100/v1 as an
 # OpenAI API connection; "hybrid-rag" appears in the model picker.
+
+# Step 5 — MCP server (access point 3: OpenClaw, on npabot-u24)
+./run_mcp_server.py --config config/query_config.yaml
+# binds to the LAN (0.0.0.0:8200, not 127.0.0.1) since OpenClaw runs on a separate VM;
+# add to OpenClaw's config: mcp.servers["hybrid-rag"] = { url: "http://<this desktop's
+# LAN IP>:8200/mcp", transport: "streamable-http", enabled: true }
 ```
 
 The first three are safe to re-run at any time — all are idempotent, only processing
 new/changed data (`Doc/step-1-requirements.md` §8, `Doc/step-3-requirements.md` §5,
-`Doc/step-4-requirements.md` §4). `run_query.py`/`run_server.py` are read-only against
-the indexes — nothing to re-run, just start the server whenever you want to ask
-questions.
+`Doc/step-4-requirements.md` §4). `run_query.py`/`run_server.py`/`run_mcp_server.py` are
+read-only against the indexes — nothing to re-run, just start whichever server you want
+running.

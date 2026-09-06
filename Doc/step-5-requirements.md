@@ -141,11 +141,49 @@ Per the original plan: OpenClaw (on a separate VM, wired to Signal via `signal-c
 calls this system as a tool when a Signal message arrives, and relays the answer back as
 a Signal reply.
 
-**Proposed:** OpenClaw calls the *same* `/v1/chat/completions` endpoint from §4, rather
-than a bespoke third integration — if OpenClaw can call arbitrary HTTP APIs as a tool,
-one endpoint serves both Open WebUI and OpenClaw with no extra code. This needs
-confirming against OpenClaw's actual tool/plugin interface before it's locked in (Open
-Questions) — it may turn out OpenClaw expects a different calling convention.
+**Resolved — different from the original proposal.** OpenClaw does not call arbitrary
+HTTP APIs or the OpenAI chat-completions shape directly; it connects to external tools
+over the **Model Context Protocol (MCP)**, configured under `mcp.servers` in OpenClaw's
+own config (JSON5), e.g.:
+
+```json5
+mcp: {
+  servers: {
+    "hybrid-rag": {
+      url: "http://192.168.1.53:8200/mcp",
+      transport: "streamable-http",
+      enabled: true,
+    },
+  },
+}
+```
+
+(`192.168.1.53` is this desktop's LAN IP as of this writing — confirm it hasn't changed
+if this stops working, e.g. `hostname -I`.)
+
+**Implemented** (`query/mcp_server.py`, `run_mcp_server.py`): the official `mcp` package
+(PyPI) provides `MCPServer` (note: `FastMCP` in `mcp` 1.x, renamed in 2.x — this project
+pins to whatever `pip install mcp` resolves to, currently 2.x) for exposing a function as
+a tool with minimal boilerplate. Wraps the *same* `query.engine.answer_query()` used by
+the CLI and Open WebUI as a single tool, `ask_documents(query: str)` — all three access
+points share one implementation, this is just a third thin adapter around it.
+
+**Network reachability — resolved.** Confirmed: `npabot-u24` can already initiate
+connections to this desktop directly, no tunnel needed in that direction (the existing
+tunnel is only for the *other* direction — reaching OpenClaw's own localhost-only web UI
+from this desktop). So the MCP server binds to `0.0.0.0` (`mcp_host` in
+`config/query_config.yaml`, default changed from the HTTP server's `127.0.0.1`) rather
+than needing a tunnel — reachable at the desktop's LAN IP on port `8200`.
+
+**Verified working end-to-end** using the official `mcp` Python client (not just an HTTP
+port check): session initialize, `list_tools()` correctly returns `ask_documents` with
+its docstring as the description, and `call_tool()` returns the same grounded, cited
+JSON answer as the other two access points — for the AGI question, identical result to
+the CLI and Open WebUI tests. Also confirmed reachable via the actual LAN IP
+(`192.168.1.53:8200`), not just loopback, matching how `npabot-u24` will connect.
+
+Not yet done: actually adding the `mcp.servers` config on the OpenClaw/npabot-u24 side
+and testing a real Signal round-trip — that's a step for the user to do on that machine.
 
 ## 6. Error handling & logging
 
@@ -195,10 +233,10 @@ new/changed files) is separate and not covered here.
    boilerplate for the `/v1/chat/completions` + `/v1/models` shape.
 3. ~~Port number~~ — **confirmed: `8100`** (checked free on this machine at
    implementation time; avoids `:8080` Open WebUI and `:11434` Ollama).
-4. **OpenClaw's actual tool/plugin calling convention** — still needs investigation.
-   §5 proposes reusing the OpenAI-compatible endpoint, but this depends on what OpenClaw
-   itself supports for calling out to external tools. Not blocking — the endpoint exists
-   and works regardless of how OpenClaw ends up calling it.
+4. ~~OpenClaw's actual tool/plugin calling convention~~ — **resolved: MCP**
+   (Model Context Protocol), not the OpenAI-compatible endpoint originally proposed —
+   see §5. Remaining sub-question: how the MCP server (desktop) becomes reachable from
+   OpenClaw (separate VM) — a decision for the user, not yet made.
 5. **Streaming responses** — implemented non-streaming (§4) for v1; confirmed working
    end-to-end (CLI and HTTP both tested against the real corpus, ~6-8s per query
    end-to-end including generation). Worth revisiting later since streaming is generally

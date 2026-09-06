@@ -10,3 +10,4 @@ charset-normalizer
 lancedb
 fastapi
 uvicorn
+mcp

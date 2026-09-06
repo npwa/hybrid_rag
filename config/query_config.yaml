@@ -36,6 +36,12 @@ allow_general_knowledge_fallback: false
 relevance_distance_threshold: 0.7   # calibrated empirically — see query/relevance.py
 relevance_min_hits: 2                # >=N of the top dense results must clear the threshold
 
-# --- HTTP server (§4/§5) ---
+# --- HTTP server for Open WebUI (§4) — local only, Open WebUI runs on this machine ---
 http_host: 127.0.0.1
 http_port: 8100         # NOT :8080 (Open WebUI) or :11434 (Ollama)
+
+# --- MCP server for OpenClaw (§5) — bound to the LAN, not 127.0.0.1, since OpenClaw
+# runs on npabot-u24 and needs to reach this over the network (confirmed: npabot-u24
+# can already reach this desktop directly, no tunnel needed in this direction). ---
+mcp_host: 0.0.0.0
+mcp_port: 8200

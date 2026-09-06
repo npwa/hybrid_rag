@@ -42,6 +42,13 @@ class QueryConfig:
     http_host: str
     http_port: int
 
+    # MCP server (access point 3 — OpenClaw). Unlike http_host above (Open WebUI, local
+    # to this machine), this needs to be reachable from npabot-u24 — bound to the LAN
+    # interface, not 127.0.0.1, per the confirmed network topology (npabot-u24 can
+    # already reach this desktop directly; no tunnel needed in this direction).
+    mcp_host: str
+    mcp_port: int
+
     @classmethod
     def load(cls, path: str | Path) -> "QueryConfig":
         raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
@@ -71,4 +78,6 @@ class QueryConfig:
             relevance_min_hits=int(raw.get("relevance_min_hits", 2)),
             http_host=raw["http_host"],
             http_port=int(raw["http_port"]),
+            mcp_host=raw.get("mcp_host", "0.0.0.0"),
+            mcp_port=int(raw.get("mcp_port", 8200)),
         )
