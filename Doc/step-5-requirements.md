@@ -85,20 +85,48 @@ fusion, since those have an interpretable absolute scale. A single top-1 distanc
 threshold alone proved unreliable — tested against a real off-topic query ("who was
 Mozart"), the single best match landed at a deceptively low distance (0.49, better than
 some genuinely relevant queries) purely by coincidence on a short/generic chunk.
-Requiring **at least 2 of the top dense results** to clear a `0.7` distance threshold
-correctly separated every query tested:
+An initial pass required **at least 2 of the top dense results** to clear a `0.7`
+distance threshold, which correctly separated every query tested at the time:
 
 | query | top-3 distances | hits < 0.7 | verdict |
 |---|---|---|---|
 | adjusted gross income 2024 | 0.58, 0.60, 0.60 | 3 | relevant |
 | who monitors the home alarm system | 0.65, 0.65, 0.79 | 2 | relevant |
-| who was wolfgang amadeus mozart | 0.49, 0.91, 0.97 | 1 | not relevant |
+| who was wolfgang amadeus mozart | 0.49, 0.91, 0.97 | 1 | not relevant (false lead) |
 | how many moons does jupiter have | 0.91, 0.92, 0.93 | 0 | not relevant |
 
-Both threshold values (`relevance_distance_threshold: 0.7`, `relevance_min_hits: 2`) are
+**`min_hits=2` turned out to be wrong** — caught live via the OpenClaw/Signal integration,
+which surfaced a real query the CLI hadn't been tested with: "last flew to Palo Alto"
+landed a genuine, single-source match (0.57, 0.85, 0.90 — only 1 hit < 0.7) and got
+refused, even though `Travel/README` really does answer it. No distance-based rule can
+cleanly tell this apart from the Mozart false lead — Mozart's coincidental top-1 (0.49)
+is *closer* than Palo Alto's genuine top-1 (0.57). Given that ambiguity, the two failure
+modes aren't symmetric: a false negative here refuses a real answer outright, while a
+false positive just costs one extra generation call — and generation already declines
+correctly when the retrieved excerpts don't substantiate an answer (Mozart still gets "I
+don't know" even after passing the gate). So the gate was loosened to **`min_hits=1`**,
+keeping it a fast-path optimization for the clearly-nothing-relevant case (Jupiter's
+moons: 0 hits) rather than the last line of defense against hallucination — that job
+belongs to generation itself.
+
+**`distance_threshold=0.7` was still too tight even with `min_hits=1`** — also caught
+live: "Thule Evolution 1800 sold price sale amount" landed its correct, single-source
+answer (a terse listing — dimensions, bullet points, a bare `"$400 ... SOLD DONE"`, no
+full-sentence prose) at distance 0.72, just over the cutoff, and got refused. Terse/
+list-style source documents apparently embed a bit further from a natural-language
+question than prose does. Across every real match measured across this project so far
+(0.49-0.72, the low end being the Mozart false lead) versus every genuinely-nothing-
+relevant case (0.91+), there's a wide, safe gap between 0.72 and 0.91 — so
+`relevance_distance_threshold` was raised to **0.85**, comfortably inside that gap.
+Confirmed this still correctly rejects Jupiter's-moons-style queries while fixing both
+the Palo Alto and Thule false negatives.
+
+Both threshold values (`relevance_distance_threshold: 0.85`, `relevance_min_hits: 1`) are
 config, not hardcoded — like the OCR confidence thresholds in Step 1, this is a starting
 point calibrated against real queries, not a fixed rule, and may need retuning as the
-corpus grows.
+corpus grows. Both revisions above were caught only once real, unpredictable questions
+came in via the OpenClaw/Signal integration — the CLI testing alone hadn't exercised
+either edge case.
 
 When the gate says "not relevant" and the fallback is off (default), the query never
 reaches the LLM at all — confirmed in testing to return in ~1.3s vs. ~6s for a real
@@ -182,8 +210,44 @@ JSON answer as the other two access points — for the AGI question, identical r
 the CLI and Open WebUI tests. Also confirmed reachable via the actual LAN IP
 (`192.168.1.53:8200`), not just loopback, matching how `npabot-u24` will connect.
 
-Not yet done: actually adding the `mcp.servers` config on the OpenClaw/npabot-u24 side
-and testing a real Signal round-trip — that's a step for the user to do on that machine.
+**Real Signal round-trip — now confirmed working end-to-end**, after three separate
+issues surfaced only once actually wired to a live agent (none of them visible from the
+protocol-level `mcp` client test above):
+
+- **Permissions.** OpenClaw needs the tool in *two* places, not one:
+  top-level `tools.allow` (the agent's allowlist) **and** a separate
+  `tools.sandbox.tools.alsoAllow` gate — distinct from `agents.defaults.sandbox`, which
+  only configures sandbox mode/docker settings — required whenever
+  `agents.defaults.sandbox.mode` is `"non-main"`. Missing the second one silently drops
+  the tool with no error visible to the end user.
+
+- **Model tool-calling reliability.** This is a separate model choice from
+  `generation_model` above — that one runs *inside* this project doing grounded RAG
+  generation; this one is OpenClaw's own agent model (`agents.defaults.model.primary`),
+  deciding *whether* to call `ask_documents` at all. Every 8-14B model tried
+  (`mistral:latest`, `qwen2.5:14b-instruct`, `llama3.1:8b`) failed in production despite
+  being Ollama-tagged `tools`-capable, in three different ways: declining outright,
+  dumping the tool-call JSON as plain text instead of Ollama's structured `tool_calls`
+  field (OpenClaw detects this exact pattern — logged as `"Assistant reply looks like a
+  tool call, but no structured tool invocation was emitted"` — but doesn't recover it
+  into a real call), or answering a stale/unrelated question entirely. This reproduced
+  even in isolated `curl` tests against Ollama directly (bypassing OpenClaw), confirming
+  it's a model-capability ceiling, not an OpenClaw or config bug — consistent with
+  OpenClaw's own docs, which say models under ~14B "often struggle with complex
+  multi-step tool calling" and recommend 30B+. `qwen3.6:35b-a3b` (already pulled, MoE —
+  runs beyond the 10GB VRAM budget by spilling to CPU/RAM, slower but survives it since
+  only ~3B params are active per token) passed every test, including under a realistic
+  multi-tool system prompt, and is now the configured default.
+
+- **Privacy-refusal framing.** Separately from capability, `qwen3.6:35b-a3b` initially
+  *declined* a real test question ("United Mileage plus account number?") outright,
+  treating it as sensitive personal data it shouldn't access — not a tool-selection
+  failure, a safety-alignment reflex. Fixed by adding explicit reassurance to both the
+  MCP server's `instructions` and the `ask_documents` tool docstring
+  (`query/mcp_server.py`): looking up a specific personal fact this way is the *intended*
+  use of the tool, not a privacy violation, since the user explicitly indexed and
+  consented to this collection being searched on their behalf. Confirmed this doesn't
+  cause over-triggering on unrelated general-knowledge questions.
 
 ## 6. Error handling & logging
 

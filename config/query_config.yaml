@@ -33,8 +33,9 @@ top_k_fused: 8          # chunks sent to the LLM after fusion
 # always visibly prefixed "General knowledge (not from your documents):" so a
 # document-grounded answer can never be confused with one that wasn't.
 allow_general_knowledge_fallback: false
-relevance_distance_threshold: 0.7   # calibrated empirically — see query/relevance.py
-relevance_min_hits: 2                # >=N of the top dense results must clear the threshold
+relevance_distance_threshold: 0.85   # calibrated empirically — see query/relevance.py
+relevance_min_hits: 1                # >=N of the top dense results must clear the threshold — see
+                                      # query/relevance.py's docstring for why this is 1, not 2
 
 # --- HTTP server for Open WebUI (§4) — local only, Open WebUI runs on this machine ---
 http_host: 127.0.0.1

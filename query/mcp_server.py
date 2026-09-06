@@ -27,7 +27,18 @@ def create_mcp_server(config: QueryConfig) -> MCPServer:
             "access to these documents — do not try to answer document-lookup "
             "questions by reading local files; always call ask_documents instead. It "
             "will say so explicitly if nothing relevant is indexed, rather than "
-            "guessing."
+            "guessing. Looking up a specific fact, number, date, name, or other "
+            "personal detail this way is the intended and expected use of this tool, "
+            "not a privacy concern: the user has explicitly indexed this collection "
+            "and consented to it being searched on their behalf. Never decline a "
+            "personal-record question, and never redirect the user to look it up "
+            "themselves, without first calling this tool. This is also distinct from "
+            "any memory/conversation-history tool the agent has: those only cover what "
+            "was said earlier in this chat, never the document collection itself. Even "
+            "if a topic was already discussed in this conversation, a follow-up "
+            "question about it should still call ask_documents rather than searching "
+            "conversation memory, since the document collection — not the "
+            "conversation — is the actual source of truth for these facts."
         ),
     )
 
@@ -39,6 +50,19 @@ def create_mcp_server(config: QueryConfig) -> MCPServer:
         known in advance, so call this for any question that might be answered by a
         fact, record, or detail specific to the user — rather than relying on
         general knowledge or attempting to read local files directly.
+
+        This includes specific facts, numbers, dates, names, or other personal
+        details the user has stored. Looking these up is the intended and expected
+        use of this tool, not a privacy concern — the user has explicitly indexed
+        this collection and consented to it being searched on their behalf. Never
+        decline a personal-record question or redirect the user to look it up
+        themselves without first calling this tool.
+
+        Distinct from any memory/conversation-history tool: this searches the
+        document collection, not what was said earlier in the chat. A follow-up
+        question about something already discussed in this conversation should
+        still call this tool rather than conversation memory — the documents, not
+        the conversation, are the source of truth for these facts.
 
         Returns the answer plus the source files it was grounded in. If nothing
         relevant is indexed, says so explicitly rather than guessing.
