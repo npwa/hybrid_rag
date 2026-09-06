@@ -1,7 +1,5 @@
 # Local Secure Hybrid RAG
 
-> Work in progress...
-
 This is a **Hybrid RAG** (Retrieval-Augmented Generation) pipeline that combines two
 different retrieval methods and merges their results before generating an answer.
 
@@ -81,30 +79,33 @@ with the Signal app wired through signal-cli.
 
 1. **Ingestion / file discovery** — Walk the Documents folder tree and catalog every file
    (path, type, size, modified date) to get a manifest to work from and that can track
-   what's been processed already.
+   what's been processed already. **Implemented** — see `Doc/step-1-requirements.md`.
 
 2. **Type-specific text extraction** — Build a per-file-type extractor (txt/Markdown pass
    through directly, PDF and Word via text extraction libraries, Excel via a table-aware
    extractor, PNG via OCR) that normalizes everything into plain text plus metadata
-   (source path, file type, folder).
+   (source path, file type, folder). **Implemented** — see `Doc/step-1-requirements.md`.
 
 3. **Chunking** — Split extracted text into retrieval-sized chunks with overlap, tagged
    with their source metadata, so answers can later be traced back to a file.
+   **Implemented** — see `Doc/step-3-requirements.md`.
 
 4. **Indexing (the two RAG legs)** — Feed chunks into a vector DB using an embedding model
    (via Ollama) for dense retrieval, and build a BM25/keyword index for sparse retrieval —
-   this is the Hybrid RAG pattern.
+   this is the Hybrid RAG pattern. **Implemented** — see `Doc/step-4-requirements.md`.
 
 5. **Retrieval + fusion service** — Stand up a small local service that takes a query,
    hits both indexes, fuses results (RRF), and returns top-K chunks — this is the piece
-   OpenClaw/Ollama will call.
+   OpenClaw/Ollama will call. **Implemented** — see `Doc/step-5-requirements.md`.
 
 6. **LLM answer generation** — Wire the retrieved chunks + query into Ollama's model to
-   generate the final answer.
+   generate the final answer. **Implemented** — see `Doc/step-5-requirements.md`.
 
 7. **Interface wiring** — Connect that retrieval+generation service as a tool/plugin
    OpenClaw can call when a Signal message comes in, so "ask a question" → Signal →
-   OpenClaw → retrieval service → Ollama → answer → Signal reply.
+   OpenClaw → retrieval service → Ollama → answer → Signal reply. **Implemented and
+   verified against a real Signal conversation** — see `Doc/step-5-requirements.md` §5.
 
 8. **Maintenance loop** — A way to detect new/changed files in Documents and incrementally
-   re-index them, rather than rebuilding everything each time.
+   re-index them, rather than rebuilding everything each time. **Scoped, not yet
+   implemented** — see `Doc/step-8-requirements.md`.
