@@ -1,5 +1,17 @@
 # Local Secure Hybrid RAG
 
+**Why do you need this?** — Imagine a field technician, inspector, or aid worker far
+from a desk, with only a phone and unreliable signal, who needs a precise answer hidden
+somewhere in tens of thousands of manuals, reports, or case files. This is an
+independent engineering project built to explore exactly that problem: a fully local,
+private Hybrid RAG system that turns a large, messy document collection into instant,
+cited answers — reachable over Signal, a chat UI, or the command line, with no cloud
+dependency and no per-query cost. It isn't built around any one company's data; it's a
+proof of the architecture. Run here against consumer hardware and a personal document
+folder, the same pipeline could become a real product by porting to more capable
+hardware and adapting the ingestion layer to a specific domain's knowledge base — field
+manuals, compliance archives, medical protocols — instead of household files.
+
 This is a **Hybrid RAG** (Retrieval-Augmented Generation) pipeline that combines two
 different retrieval methods and merges their results before generating an answer.
 
