@@ -249,7 +249,130 @@ protocol-level `mcp` client test above):
   consented to this collection being searched on their behalf. Confirmed this doesn't
   cause over-triggering on unrelated general-knowledge questions.
 
-## 6. Error handling & logging
+- **The privacy-refusal root cause was actually in OpenClaw's own workspace files, not
+  ours.** `~/.openclaw/workspace/SOUL.md` has a line — *"Private things stay private.
+  Period."* — clearly meant to mean "don't leak the user's data to others," but generic
+  enough that a model could read it as "don't retrieve the user's own data for them."
+  Confirmed by testing the real, unedited SOUL.md/AGENTS.md/USER.md content (not a
+  hand-written approximation) directly against Ollama: it reproduced the exact refusal.
+  Fixed at the source — clarified the boundary in SOUL.md, plus a direct
+  `hybrid-rag__ask_documents`-specific note added to AGENTS.md's "local notes" cheat
+  sheet — since the `mcp_server.py` framing alone wasn't enough once diluted by the rest
+  of a real, longer system prompt. This lesson generalizes: **when a local model
+  misbehaves with an OpenClaw tool, check OpenClaw's own workspace files
+  (`SOUL.md`/`AGENTS.md`/`MEMORY.md`/`USER.md`) for a competing or ambiguous instruction
+  before assuming the tool's own description needs more work.**
+
+### 5a. The `qwen3:8b` speed experiment (attempted, reverted)
+
+`qwen3.6:35b-a3b` fixed every failure mode above, but at a real cost: ~14s average
+response time, since it doesn't fit the 10GB VRAM budget (65%/35% CPU/GPU split). Given
+`qwen3:8b` is already this project's own `generation_model` (§2), runs 100% GPU-resident,
+and is ~6x faster, it was worth testing as OpenClaw's *agent* model too — a different
+role than `generation_model` (that one does grounded RAG generation *inside* this
+project; this one is OpenClaw's own model deciding *whether* to call `ask_documents` at
+all).
+
+**Built `scripts/eval_tool_calling_models.py`** to make this repeatable: it extracts the
+live `ask_documents` docstring directly from `query/mcp_server.py` (so it can't drift out
+of sync with production) and replays every real failure mode found so far against any
+candidate model via direct Ollama `/api/chat` calls — bypassing OpenClaw entirely, which
+is both this script's strength (isolates the model as a variable) and, as this section
+documents, its limit (it can't see what OpenClaw's own runtime actually sends).
+
+Initial results looked like a clean win: `qwen3:8b` passed every scripted case,
+including 9/9 repeats of the original three, once a *system-prompt-level* reassurance was
+added (the `mcp_server.py`-only fix wasn't enough for this particular model — needed the
+same "not a privacy concern" framing one level up, in the system prompt itself). It also
+correctly discriminated `web_search` (weather) from `ask_documents` (personal facts) from
+answering directly (general trivia).
+
+**It still failed live, repeatedly, in ways the test script never caught:**
+
+1. First live symptom: re-asking the *exact same* question later in the same
+   conversation skipped the tool and answered from its own memory of the earlier turn.
+   Reproduced this in isolation and fixed it with explicit "call it fresh every time,
+   even for an identical repeat" language in both SOUL.md and AGENTS.md — validated 5/5,
+   no regressions.
+2. Still failed live after that deploy. Investigated whether OpenClaw's config even
+   assembles `SOUL.md + AGENTS.md + USER.md` into one system prompt the way the eval
+   script assumes — confirmed the live workspace also has `MEMORY.md`, `IDENTITY.md`, and
+   `SESSION.md`, none of which the eval script accounts for. `MEMORY.md` in particular
+   carries its own forceful, competing directive ("BEFORE answering any question about
+   past conversations... you MUST call `memory_search`... the workspace folder is the
+   source of truth") — plausible cause, but reproducing it locally (concatenating
+   `MEMORY.md` into the test prompt) still passed 5/5, so this alone wasn't it either.
+3. Found a real, confirmable variable instead: Ollama's `think` field for Qwen3 models.
+   `think: false` and `think: true` were both reliable (3/3) in isolation; `think` *left
+   unset* (Ollama/OpenClaw's actual default when a caller doesn't know about this
+   Qwen3-specific field) was flaky — 2 of 3 runs answered from memory despite the model's
+   own reasoning trace correctly noting "the user is asking again... let me check the
+   previous interaction." Confirmed via OpenClaw's docs that a per-model
+   `agents.defaults.models."<model>".params.thinking` override exists. Set it to `false`
+   to match this project's own generation-model choice (§2, "faithfulness over
+   chain-of-thought") — but this made things *worse*, not better, live: the model began
+   fixating on the most recently established fact even for entirely unrelated follow-up
+   questions, and fabricated a plausible-looking but made-up answer for one genuinely new
+   question (Delta frequent-flier number) instead of calling the tool or declining.
+   Switching to `thinking: true` fixed the exact 4-message adversarial sequence that
+   exposed this (repeat → two garbled queries → one real new question) — all 4 handled
+   correctly, including the garbled ones (erring toward checking rather than fabricating).
+4. **Still failed live even with `thinking: true`**, specifically back on the *original*
+   literal-repeat case — reliably using memory for a repeated topic while correctly using
+   the tool for genuinely new ones. Re-tested the literal repeat 10/10 in isolation with
+   `thinking: true` and it passed every time — a full, direct contradiction of live
+   behavior.
+
+**Conclusion: reverted to `qwen3.6:35b-a3b`, this time with `num_ctx: 8192` capped
+(keeps it mostly GPU-resident, faster than the untested full-32K default) — validated 5/5
+on the literal repeat and 4/4 on the full adversarial sequence, matching its clean record
+across every other real Signal message sent so far.** The `qwen3:8b` experiment is not
+resumed. Each isolated fix passed every test thrown at it, then failed live in a new way
+— a pattern that points at a real capacity/robustness gap for an 8B model under
+OpenClaw's actual runtime conditions (likely its memory system injecting recalled facts
+through some channel other than plain conversation-history text, which `curl`-testing
+against raw Ollama cannot see or reproduce), not a prompt or config problem with a next
+fix waiting to be found. **Do not re-attempt switching OpenClaw's agent model to
+something smaller than `qwen3.6:35b-a3b` without first finding a way to observe
+OpenClaw's actual constructed request to Ollama** (not just the final reply) — every
+attempt so far to reason about this from the outside, via config docs and isolated
+replication, has produced a fix that worked in testing and failed live.
+
+### 5b. MEMORY.md: another competing directive in OpenClaw's own workspace
+
+Even after reverting to `qwen3.6:35b-a3b`, a real Signal message ("Seriously, when did I
+last fly to Palo Alto?" — a question asked across several earlier days per this
+project's own query logs) still skipped `ask_documents` entirely and called
+`memory_search` instead, with no `QUERY` log entry on this project's side at all. Same
+root-cause class as the SOUL.md finding in §5 above: `~/.openclaw/workspace/MEMORY.md`
+carries its own explicit, forceful directive —
+
+> "BEFORE answering any question about past conversations... you MUST call
+> `memory_search`... the workspace folder is the source of truth."
+
+— and a question phrased around "last..."/referencing something asked before is
+reasonably read by the model as "a question about a past conversation," triggering this
+rule ahead of anything in SOUL.md/AGENTS.md. Reproduced directly (4/5 calls went to
+`memory_search` instead of `ask_documents` using the real, unedited `MEMORY.md` content).
+Fixed with a single added line under MEMORY.md's "RAG Directives," an explicit carve-out:
+personal-document questions (account numbers, dates, purchases, travel, medical records,
+etc.) always go through `ask_documents`, never `memory_search`, regardless of whether the
+topic came up before — `memory_search` is reserved for questions about the assistant's
+own conversational history, not for facts the document collection holds. Validated 6/6
+on the failing case, confirmed `memory_search` still correctly fires for a genuine
+meta-conversation question ("What did we decide about the database schema last week?"),
+and no regressions on the original three cases.
+
+**This generalizes the §5 lesson further: OpenClaw's workspace can carry an arbitrary
+number of files (`SOUL.md`, `AGENTS.md`, `MEMORY.md`, `IDENTITY.md`, `SESSION.md` were
+all found present on this deployment), any of which can define a directive that competes
+with or pre-empts a tool's own description.** Each one found in this project so far
+(`SOUL.md`'s privacy-refusal line, `MEMORY.md`'s memory_search mandate) was worded
+correctly for its own original intent and only became a problem in combination with a
+new tool being added later — there is no reason to assume these are the last two. Any
+future "the model isn't calling the tool" report should start by grepping the full live
+workspace for related keywords (`memory`, `private`, `personal`, the tool's own name),
+not by re-tuning `query/mcp_server.py`'s description again.
 
 - Retrieval failure (LanceDB/FTS5 unreachable or errors), embedding failure (Ollama
   unreachable), generation failure (LLM call errors or times out) — each degrades to a
