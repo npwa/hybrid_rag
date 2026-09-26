@@ -72,6 +72,19 @@ If that fails, the fix is a Python built against a SQLite with FTS5 enabled (reb
 Python, or using a distro Python package that already has it — this has not come up on
 Ubuntu 24.04 but is worth checking on other distros/Python builds).
 
+**Mail delivery (Step 8 only — optional unless you use `run_maintenance.sh`)**: the
+maintenance loop emails its report with the local `mail` command, which needs a working
+local MTA. On the development machine that's Postfix with a relay host configured
+(`postconf -n | grep relayhost`) plus `mailutils`:
+
+```bash
+sudo apt install -y mailutils postfix   # choose "Satellite system" and your relay host when prompted
+```
+
+Postfix set to local-only delivery will accept the mail but never send it anywhere
+useful. Check that a plain `echo test | mail -s test you@example.com` actually arrives
+before relying on the daily report. Not needed for the CLI, Open WebUI, or OpenClaw paths.
+
 ## 4. Ollama (external service)
 
 Not a Python package — a separate service this project talks to over HTTP. Confirmed
@@ -179,9 +192,13 @@ source .venv/bin/activate
 # binds to the LAN (0.0.0.0:8200, not 127.0.0.1) since OpenClaw runs on a separate VM;
 # add to OpenClaw's config: mcp.servers["hybrid-rag"] = { url: "http://<this desktop's
 # LAN IP>:8200/mcp", transport: "streamable-http", enabled: true }
+# Step 8 — maintenance loop: ingest -> chunk -> index in one command, with a logged,
+# emailed report. This is what cron runs daily; see Doc/step-8-requirements.md §8.
+cp config/maintenance_config.example.yaml config/maintenance_config.yaml   # once; set report_email
+./run_maintenance.sh
 ```
 
-The first three are safe to re-run at any time — all are idempotent, only processing
+The pipeline stages are safe to re-run at any time — all are idempotent, only processing
 new/changed data (`Doc/step-1-requirements.md` §8, `Doc/step-3-requirements.md` §5,
 `Doc/step-4-requirements.md` §4). `run_query.py`/`run_server.py`/`run_mcp_server.py` are
 read-only against the indexes — nothing to re-run, just start whichever server you want

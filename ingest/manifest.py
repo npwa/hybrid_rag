@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import contextlib
 import dataclasses
+import hashlib
 import json
 import sqlite3
 from pathlib import Path, PurePosixPath
@@ -243,11 +244,29 @@ class Manifest:
         changed file's old chunks are soft-deleted (mark_chunks_deleted_for_file, same
         as a removed source file — Step 4 needs the embedding_status='deleted' signal to
         clean up anything already embedded/indexed under the old chunk_ids) and new ones
-        inserted with fresh chunk_ids, so this is always a plain INSERT, never an UPDATE."""
-        row = rec.as_row()
-        cols = list(row.keys())
-        placeholders = ", ".join(f":{c}" for c in cols)
-        self.conn.execute(f"INSERT INTO chunks ({', '.join(cols)}) VALUES ({placeholders})", row)
+        inserted, so this is always a plain INSERT, never an UPDATE.
+
+        chunk_ids are versioned by the source file's content hash (chunking/pipeline.py),
+        so a modified file's new chunks never collide with its own soft-deleted ones. One
+        collision is still possible: a file that reverts to *identical* earlier content
+        (deleted then restored, or edited then undone) before Step 4 has purged the
+        old rows would derive the same ids. Rather than fail, that chunk gets a salted id —
+        the old row stays put under its own id and is cleaned up from the vector/FTS5
+        stores as normal, and the new row is embedded fresh, so no duplicate ever reaches
+        either store."""
+        for attempt in range(1000):
+            row = rec.as_row()
+            if attempt:
+                row["chunk_id"] = hashlib.sha256(f"{rec.chunk_id}:{attempt}".encode("utf-8")).hexdigest()
+            cols = list(row.keys())
+            placeholders = ", ".join(f":{c}" for c in cols)
+            try:
+                self.conn.execute(f"INSERT INTO chunks ({', '.join(cols)}) VALUES ({placeholders})", row)
+                return
+            except sqlite3.IntegrityError as e:
+                if "chunks.chunk_id" not in str(e):
+                    raise
+        raise RuntimeError(f"could not find a free chunk_id for {rec.chunk_id}")
 
     def mark_chunks_deleted_for_file(self, file_id: str) -> int:
         """Does not commit — see upsert(). Returns rows affected."""

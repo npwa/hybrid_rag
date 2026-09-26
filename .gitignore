@@ -16,6 +16,11 @@ lancedb/
 # Copy config/ingest_config.example.yaml to config/ingest_config.yaml to run locally.
 config/ingest_config.yaml
 
+# Real maintenance config — contains the report recipient's email address.
+# Copy config/maintenance_config.example.yaml to config/maintenance_config.yaml.
+config/maintenance_config.yaml
+.maintenance.lock
+
 # --- Personal / machine-local Claude Code settings (e.g. additionalDirectories) ---
 .claude/settings.local.json
 

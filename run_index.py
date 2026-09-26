@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import sys
 import time
 
 from indexing.config import IndexConfig
@@ -58,9 +59,23 @@ def main() -> int:
     print(f"\nchunks table embedding_status breakdown: {chunk_counts}")
     logger.info("chunks table embedding_status breakdown: %s", chunk_counts)
 
+    print(f"RUN_SUMMARY stage=index elapsed={elapsed:.1f} embedded_chunks={stats.get('embedded_chunks', 0)} "
+          f"chunks_cleaned_up={stats.get('chunks_cleaned_up', 0)} "
+          f"embed_batch_failures={stats.get('embed_batch_failures', 0)}")
+
     print(f"\nLog: {log_path}")
     print(f"Manifest: {config.manifest_db}")
     print(f"LanceDB: {config.lancedb_dir}")
+
+    # Failed embedding batches stay 'pending' and are retried next run, so nothing is
+    # lost — but the run did not finish its job, and a scheduled caller (Step 8's
+    # run_maintenance.sh) must be able to tell that from a clean run. This is most
+    # often Ollama being down, in which case *every* batch fails.
+    if stats.get("embed_batch_failures", 0) > 0:
+        print(f"ERROR: {stats['embed_batch_failures']} embedding batch(es) failed — "
+              "affected chunks remain pending and will be retried on the next run.",
+              file=sys.stderr)
+        return 1
     return 0
 
 

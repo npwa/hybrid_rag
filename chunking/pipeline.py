@@ -32,8 +32,14 @@ def _now() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
 
-def _chunk_id(file_id: str, index: int) -> str:
-    return hashlib.sha256(f"{file_id}:{index}".encode("utf-8")).hexdigest()
+def _chunk_id(file_id: str, content_hash: str, index: int) -> str:
+    # Versioned by the source file's content hash, not just (file, position): when a file
+    # changes, its old chunks are soft-deleted and stay in the `chunks` table (as the
+    # `deleted` cleanup signal Step 4 needs) until the index stage purges them — so the
+    # replacement chunks must get *different* ids or the insert collides with the old rows
+    # (found the first time the maintenance loop re-chunked a modified file; every earlier
+    # run had only ever chunked a fresh corpus).
+    return hashlib.sha256(f"{file_id}:{content_hash}:{index}".encode("utf-8")).hexdigest()
 
 
 @dataclass
@@ -101,7 +107,7 @@ def _worker_task(file_row: dict) -> ChunkWorkResult:
     rows = []
     for i, span in enumerate(spans):
         rec = ChunkRecord(
-            chunk_id=_chunk_id(file_id, i),
+            chunk_id=_chunk_id(file_id, content_hash or "", i),
             file_id=file_id,
             chunk_index=i,
             text=span.text,

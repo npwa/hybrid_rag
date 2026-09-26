@@ -1,5 +1,8 @@
 # Step 8 Requirements: Maintenance Loop
 
+**Status: implemented and verified in an isolated sandbox (§8). Not yet scheduled — see
+§8 "Turning it on".**
+
 See `README.md`'s high-level plan, step 8: "A way to detect new/changed files in
 Documents and incrementally re-index them, rather than rebuilding everything each
 time."
@@ -174,3 +177,95 @@ same completion email as any other failed run, so it's never silent.
   match reality, the email arrives, and the changes are actually queryable via Step 5
   afterward — plus a deliberate second-run-while-first-still-running test to confirm the
   `flock` guard and its failure email both actually fire
+
+## 8. As built
+
+### `run_maintenance.sh`
+
+Implements §2-§7 as specced. Details worth knowing beyond the spec:
+
+- **Stage output contract.** Each stage script (`run_ingest.py`, `run_chunk.py`,
+  `run_index.py`) now ends with one machine-readable line, e.g.
+  `RUN_SUMMARY stage=ingest elapsed=1.0 added=3 updated=0 removed=0 unchanged=0 other=0 failed=0`.
+  The orchestrator reads that line rather than scraping the human-readable tables.
+- **Headline counts are file-level, from ingestion** (`+added ~updated -removed`);
+  chunk and index counts appear per stage in the email body. A "restored" file (removed,
+  then back on disk) counts as *added*.
+- **Exit codes.** `run_index.py` now exits 1 if any embedding batch failed (previously
+  always 0): a scheduled caller must be able to tell "finished" from "Ollama was down, so
+  nothing got embedded". Affected chunks stay `pending` and the next run picks them up,
+  so nothing is lost. File-level failures in ingest/chunk stay non-fatal (one bad file
+  never aborts a run) and show up as `failed=N` in the report instead.
+- **Email.** One message per run, through the local `mail` command. Failure reports
+  include the tail of the failing stage's output. Subject examples:
+  `[hybrid-rag maintenance] OK — 4m12s — +3 ~1 -0`,
+  `[hybrid-rag maintenance] FAILED at index stage — 1m03s`,
+  `[hybrid-rag maintenance] FAILED — previous run still in progress`.
+  If `report_email` is missing from the config, the run still happens and a warning is
+  logged; nothing is emailed.
+- **Log.** `logs/maintenance.log`, append-only, no rotation. Each stage's own log path is
+  listed in the email.
+- **Testability.** Environment overrides (`MAINTENANCE_CONFIG`, `INGEST_CONFIG`,
+  `CHUNK_CONFIG`, `INDEX_CONFIG`, `MAINTENANCE_MAIL_CMD`, `MAINTENANCE_LOG`,
+  `MAINTENANCE_LOCK`) exist so the whole loop can run against a scratch tree with a stub
+  mailer. They're all optional; cron uses none of them.
+
+### Two pre-existing bugs the end-to-end test exposed
+
+Both were latent since Steps 1 and 3: every earlier run had only ever processed a fresh
+corpus, and the maintenance loop is the first thing that re-processes *changed* data.
+
+1. **Any modified file crashed the chunk stage** (`UNIQUE constraint failed:
+   chunks.chunk_id`). `chunk_id` was `sha256(file_id:index)` — stable across edits — while
+   a changed file's old chunks are deliberately kept as soft-deleted rows until Step 4
+   purges them, so the replacement chunk 0 collided with the old chunk 0. On the real
+   corpus this would have failed the first daily run after any file was edited. Fix:
+   `chunk_id` is now versioned by the source file's content hash
+   (`sha256(file_id:content_hash:index)`), and `insert_chunk` salts the id instead of
+   failing in the one remaining case (a file reverting to identical earlier content
+   before the old rows are purged). Existing chunks keep their old ids; only newly
+   created chunks use the new scheme, and the "unchanged" check is by content hash, so
+   nothing is re-chunked because of this change.
+2. **A file removed and then restored byte-identical stayed `deleted` forever**: ingest
+   treated its unchanged content hash as "unchanged" and kept the old `deleted` status.
+   Fix: a `deleted` row is never treated as unchanged; the file is re-extracted, revived,
+   and counted as added.
+
+### Verification
+
+Run against an isolated scratch source tree with its own manifest/LanceDB (the real
+Documents tree was never touched) and a stub mailer, using the real Ollama embedding
+model and the real Step 5 query engine:
+
+| run | scenario | result |
+|---|---|---|
+| 1 | 3 new files | `+3 ~0 -0`, all indexed |
+| 2 | nothing changed | `+0 ~0 -0`, everything unchanged, no re-embedding |
+| 3 | modify one, add one, delete one | `+1 ~1 -1`; old chunks of modified and deleted files cleaned from both stores |
+| 4 | restore the deleted file identically | `+1`, file revived and re-embedded |
+| 5 | delete another file | `-1` |
+| — | query each change through Step 5 | added, modified (new value returned) and restored files answer correctly; removed file's content is no longer retrievable |
+| 6 | second run while the first holds the lock | fails immediately, no stage runs, failure email sent; next run works |
+| 7 | Ollama unreachable | `FAILED at index stage`, chunks stay pending; next run embeds them |
+| 8 | bad ingest config | `FAILED at ingest stage`, later stages skipped |
+| 9 | `env -i`, cwd `/` (cron-like) | works |
+| — | real `mail` command, em-dash subject | delivered to a local mailbox intact |
+
+Not verified here: delivery to an external address through the Postfix relay, and a
+real scheduled cron firing. Both are the first things to check after turning it on.
+
+### Turning it on
+
+```bash
+cp config/maintenance_config.example.yaml config/maintenance_config.yaml
+# edit config/maintenance_config.yaml: set report_email to your real address
+
+./run_maintenance.sh        # first run by hand; on the real corpus this is a full
+                            # pass, so expect it to take a while, and check the email
+
+crontab -e                  # then add (daily at 03:00):
+0 3 * * * /home/npalmass/work/hybrid_rag/run_maintenance.sh >> /home/npalmass/work/hybrid_rag/logs/maintenance_cron.log 2>&1
+```
+
+The script resolves its own directory and calls `.venv/bin/python3` by absolute path, so
+the cron line needs nothing else (no `cd`, no venv activation).

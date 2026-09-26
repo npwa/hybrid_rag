@@ -1,0 +1,14 @@
+# Step 8 maintenance-loop configuration — see Doc/step-8-requirements.md.
+#
+# This is a template. Copy it to maintenance_config.yaml (gitignored — see .gitignore)
+# and set your own address before scheduling run_maintenance.sh:
+#
+#   cp config/maintenance_config.example.yaml config/maintenance_config.yaml
+#
+# Flat "key: value" lines only — run_maintenance.sh reads this with plain shell tools,
+# not a YAML parser, so keep it that simple (no lists, no nesting, no inline comments
+# after the value).
+
+# Where the completion report goes after every run, success or failure. Sent with the
+# local `mail` command (needs a working local MTA — see REQUIREMENTS.md §8).
+report_email: admin_user@company.com

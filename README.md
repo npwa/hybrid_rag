@@ -119,5 +119,6 @@ with the Signal app wired through signal-cli.
    verified against a real Signal conversation** — see `Doc/step-5-requirements.md` §5.
 
 8. **Maintenance loop** — A way to detect new/changed files in Documents and incrementally
-   re-index them, rather than rebuilding everything each time. **Scoped, not yet
-   implemented** — see `Doc/step-8-requirements.md`.
+   re-index them, rather than rebuilding everything each time. **Implemented** — one
+   command runs ingest → chunk → index and emails a report, built to run daily from cron;
+   see `Doc/step-8-requirements.md`.

@@ -62,6 +62,11 @@ def main() -> int:
     print(f"\nchunks table embedding_status breakdown: {chunk_counts}")
     logger.info("chunks table embedding_status breakdown: %s", chunk_counts)
 
+    print(f"RUN_SUMMARY stage=chunk elapsed={elapsed:.1f} chunked={stats.get('chunked', 0)} "
+          f"unchanged={stats.get('unchanged', 0)} chunks_created={stats.get('chunks_created', 0)} "
+          f"chunks_marked_deleted={stats.get('chunks_marked_deleted', 0)} "
+          f"failed={stats.get('failed', 0) + stats.get('read_error', 0)}")
+
     print(f"\nLog: {log_path}")
     print(f"Manifest: {config.manifest_db}")
     return 0

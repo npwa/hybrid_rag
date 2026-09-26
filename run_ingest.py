@@ -85,6 +85,16 @@ def main() -> int:
     logger.info("  %-24s %d", "skipped (excluded)", excluded_skipped)
     logger.info("  %-24s %d", "unclassified", unclassified)
 
+    # Per-run deltas — distinct from the cumulative manifest-wide status table above.
+    print(f"\nThis run: {stats['added']} added, {stats['updated']} updated, "
+          f"{stats['deleted']} removed, {stats['unchanged']} unchanged "
+          f"({stats['other']} skipped/unreadable, {stats['failed']} failed).")
+    if args.limit is not None:
+        print("(--limit given: removal detection was skipped)")
+    print(f"RUN_SUMMARY stage=ingest elapsed={elapsed:.1f} added={stats['added']} "
+          f"updated={stats['updated']} removed={stats['deleted']} unchanged={stats['unchanged']} "
+          f"other={stats['other']} failed={stats['failed']}")
+
     print(f"\nLog: {log_path}")
     print(f"Manifest: {config.manifest_db}")
     return 0

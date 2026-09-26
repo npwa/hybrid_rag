@@ -137,6 +137,9 @@ class WorkResult:
     content_hash: str | None = None
     text: str | None = None
     reused: bool = False
+    # True when this file had no live manifest row before this run (never seen, or was
+    # soft-deleted and has since reappeared) — lets run() report "added" vs "updated".
+    was_new: bool = False
     prior_extracted_text_path: str | None = None
     ocr_used: bool = False
     ocr_confidence: float | None = None
@@ -219,7 +222,8 @@ def _worker_task(abs_path_str: str, rel_path: str) -> WorkResult:
                            size, mtime, category, "failed", error_message=str(e))
 
     existing = _lookup_existing(file_id)
-    if existing is not None and existing["content_hash"] == content_hash and existing["status"] != "pending":
+    if (existing is not None and existing["content_hash"] == content_hash
+            and existing["status"] not in ("pending", "deleted")):
         return WorkResult(
             "unchanged", file_id, abs_path_str, rel_path, filename, ext, size, mtime, category,
             existing["status"], content_hash=content_hash, reused=True,
@@ -239,15 +243,17 @@ def _worker_task(abs_path_str: str, rel_path: str) -> WorkResult:
         return WorkResult(
             "result", file_id, abs_path_str, rel_path, filename, ext, size, mtime, category, "failed",
             content_hash=content_hash,
+            was_new=existing is None or existing["status"] == "deleted",
             error_message=f"unhandled exception: {e}\n{traceback.format_exc()}",
         )
 
     prior_path = existing["extracted_text_path"] if existing is not None else None
+    was_new = existing is None or existing["status"] == "deleted"
     text = result.text if (result.status in _TEXT_STATUSES and result.text is not None) else None
     return WorkResult(
         "result", file_id, abs_path_str, rel_path, filename, ext, size, mtime, category, result.status,
         content_hash=content_hash, text=text, prior_extracted_text_path=prior_path,
-        ocr_used=result.ocr_used, ocr_confidence=result.ocr_confidence,
+        was_new=was_new, ocr_used=result.ocr_used, ocr_confidence=result.ocr_confidence,
         sheet_names=result.sheet_names, tags=result.tags, error_message=result.error_message,
     )
 
@@ -300,6 +306,14 @@ def run(config: Config, manifest: Manifest, limit: int | None = None) -> dict:
     processed = 0
     since_commit = 0
     registry = manifest.extracted_text_claims()
+    # Per-run deltas (not the cumulative manifest-wide totals run_ingest.py prints from
+    # manifest.status_counts()): what *this* run added, updated, left alone, or removed.
+    #   added     - new files (or removed files that came back) that were extracted
+    #   updated   - previously-seen files whose content changed and were re-extracted
+    #   unchanged - previously-seen files whose content hash matched, skipped
+    #   other     - zero-byte, excluded, unclassified, or unreadable files (no extraction)
+    #   failed    - subset of added/updated/other whose processing failed this run
+    counts = {"added": 0, "updated": 0, "unchanged": 0, "other": 0, "failed": 0}
 
     def on_symlink(p: Path):
         log.info("SYMLINK_SKIPPED %s", p)
@@ -337,6 +351,14 @@ def run(config: Config, manifest: Manifest, limit: int | None = None) -> dict:
                 wr: WorkResult = fut.result()
                 seen_file_ids.add(wr.file_id)
                 _finalize(wr, config, manifest, registry)
+                if wr.kind == "unchanged":
+                    counts["unchanged"] += 1
+                elif wr.kind == "result":
+                    counts["added" if wr.was_new else "updated"] += 1
+                else:
+                    counts["other"] += 1
+                if wr.status == "failed":
+                    counts["failed"] += 1
                 since_commit += 1
                 if since_commit >= _COMMIT_BATCH:
                     manifest.commit()
@@ -345,12 +367,17 @@ def run(config: Config, manifest: Manifest, limit: int | None = None) -> dict:
 
     manifest.commit()
 
+    deleted = 0
     if limit is None:
         stale = manifest.all_file_ids() - seen_file_ids
         for file_id in stale:
             manifest.mark_deleted(file_id, _now())
         manifest.commit()
+        deleted = len(stale)
         if stale:
             log.info("DELETED %d file(s) no longer present on disk", len(stale))
 
-    return {"processed": processed}
+    log.info("run delta: added=%d updated=%d unchanged=%d other=%d failed=%d deleted=%d",
+             counts["added"], counts["updated"], counts["unchanged"], counts["other"],
+             counts["failed"], deleted)
+    return {"processed": processed, "deleted": deleted, **counts}
