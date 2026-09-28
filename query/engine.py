@@ -78,7 +78,8 @@ def answer_query(query: str, config: QueryConfig) -> QueryResult:
     finally:
         conn.close()
 
-    fused = rrf_fuse([dense_results, sparse_results], k=config.rrf_k, top_k=config.top_k_fused)
+    fused = rrf_fuse([dense_results, sparse_results], k=config.rrf_k, top_k=config.top_k_fused,
+                      list_names=["dense", "sparse"])
 
     system, user = build_prompt(query, fused)
     try:
@@ -87,10 +88,34 @@ def answer_query(query: str, config: QueryConfig) -> QueryResult:
         log.warning("QUERY_GENERATION_FAILED %r: %s", query, e)
         return QueryResult(answer="", error=f"generation failed: {e}")
 
-    sources = [{"rel_path": c["rel_path"], "chunk_id": c["chunk_id"]} for c in fused]
+    # Which leg(s) actually found each source, and at what rank/score — not visible
+    # from the fused list alone, since RRF's whole point is combining two differently-
+    # scaled rankings into one. See run_query.py --scores for a human-readable table.
+    sources = []
+    for c in fused:
+        ranks = c["_fusion_ranks"]
+        sources.append({
+            "rel_path": c["rel_path"],
+            "chunk_id": c["chunk_id"],
+            "branch": "+".join(n for n in ("dense", "sparse") if n in ranks),
+            "rrf_score": round(c["_rrf_score"], 5),
+            "dense_rank": ranks.get("dense"),
+            "dense_distance": c.get("_distance"),
+            "sparse_rank": ranks.get("sparse"),
+            "sparse_bm25": c.get("score"),
+        })
     elapsed = time.monotonic() - start
     log.info(
         "QUERY %r -> %d sources, %.2fs [%s]",
         query, len(sources), elapsed, ", ".join(s["rel_path"] for s in sources),
+    )
+    log.info(
+        "QUERY %r fusion detail: %s", query,
+        "; ".join(
+            f"{s['rel_path']} branch={s['branch']} rrf={s['rrf_score']} "
+            f"dense(rank={s['dense_rank']},dist={s['dense_distance']}) "
+            f"sparse(rank={s['sparse_rank']},bm25={s['sparse_bm25']})"
+            for s in sources
+        ),
     )
     return QueryResult(answer=answer, sources=sources)

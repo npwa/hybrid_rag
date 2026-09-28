@@ -58,6 +58,18 @@ Given a query string, in order:
 7. **Return** `{answer, sources: [{rel_path, chunk_id, ...}]}` — never just the bare
    answer text, so every caller (§3–§5) can surface citations if it wants to.
 
+**Fusion diagnostics.** Each source in the returned list also carries `branch` (`dense`,
+`sparse`, or `dense+sparse` — which leg(s) actually found it), `rrf_score`, and the raw
+per-leg rank/score (`dense_rank`/`dense_distance`, `sparse_rank`/`sparse_bm25`; `None`
+for a leg that didn't return the chunk at all). Added because the fused list alone
+doesn't say *why* a source was picked — a source that both legs agree on and one that
+survived only because it was rank 1 in an otherwise-empty leg look identical without
+this. `query/fusion.py::rrf_fuse` computes it (merging per-leg metadata rather than the
+original first-list-wins `meta.setdefault`, so both legs' raw scores survive when a
+chunk appears in both), and both the query log (`fusion detail:` line, at INFO — visible
+in `logs/query_<date>.log` without any config change) and `./run_query.py --scores`
+(a formatted table) surface it. `--sources` alone still shows only file paths, unchanged.
+
 ### 2a. Relevance gate & opt-in general-knowledge fallback
 
 **Design decision, confirmed:** by default, this system answers *only* from the
