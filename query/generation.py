@@ -4,8 +4,30 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 
 from query.config import QueryConfig
+
+
+@dataclass
+class GenerationMetrics:
+    """Ollama's /api/chat response carries real throughput numbers that
+    generate_answer() otherwise discards. eval_count/eval_duration cover
+    *everything* the model generated, including a hidden thinking trace when
+    config.think is on — that's real compute, so it belongs in tok/sec, not just
+    the visible answer. All durations are nanoseconds, straight from Ollama."""
+    text: str
+    eval_count: int | None
+    eval_duration_ns: int | None
+    prompt_eval_count: int | None
+    prompt_eval_duration_ns: int | None
+    total_duration_ns: int | None
+
+    @property
+    def tokens_per_second(self) -> float | None:
+        if not self.eval_count or not self.eval_duration_ns:
+            return None
+        return self.eval_count / (self.eval_duration_ns / 1e9)
 
 _SYSTEM_PROMPT = (
     "You are a helpful assistant answering questions using only the provided source "
@@ -46,7 +68,7 @@ def label_general_knowledge(answer: str) -> str:
     return _GENERAL_KNOWLEDGE_PREFIX + answer
 
 
-def generate_answer(system: str, user: str, config: QueryConfig) -> str:
+def generate_answer_with_metrics(system: str, user: str, config: QueryConfig) -> GenerationMetrics:
     payload = {
         "model": config.generation_model,
         "messages": [
@@ -77,4 +99,17 @@ def generate_answer(system: str, user: str, config: QueryConfig) -> str:
     content = body.get("message", {}).get("content")
     if not content:
         raise GenerationError(f"unexpected response shape from Ollama /api/chat: {body}")
-    return content
+    return GenerationMetrics(
+        text=content,
+        eval_count=body.get("eval_count"),
+        eval_duration_ns=body.get("eval_duration"),
+        prompt_eval_count=body.get("prompt_eval_count"),
+        prompt_eval_duration_ns=body.get("prompt_eval_duration"),
+        total_duration_ns=body.get("total_duration"),
+    )
+
+
+def generate_answer(system: str, user: str, config: QueryConfig) -> str:
+    """Thin wrapper kept for any caller that just wants the text — see
+    generate_answer_with_metrics() for real token/throughput numbers."""
+    return generate_answer_with_metrics(system, user, config).text

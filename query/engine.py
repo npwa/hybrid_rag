@@ -19,7 +19,7 @@ from query.generation import (
     GenerationError,
     build_general_knowledge_prompt,
     build_prompt,
-    generate_answer,
+    generate_answer_with_metrics,
     label_general_knowledge,
 )
 from query.relevance import has_relevant_results
@@ -34,6 +34,12 @@ class QueryResult:
     sources: list[dict] = field(default_factory=list)
     error: str | None = None
     general_knowledge: bool = False
+    # Populated only when a generation call actually happened — None on the
+    # strict-grounding immediate-refusal path (query/relevance.py), since there's
+    # nothing to measure. See scripts/benchmark_queries.py.
+    total_seconds: float | None = None
+    gen_tokens: int | None = None
+    gen_seconds: float | None = None
 
 
 def answer_query(query: str, config: QueryConfig) -> QueryResult:
@@ -62,14 +68,16 @@ def answer_query(query: str, config: QueryConfig) -> QueryResult:
     if not relevant and config.allow_general_knowledge_fallback:
         system, user = build_general_knowledge_prompt(query)
         try:
-            answer = generate_answer(system, user, config)
+            gen = generate_answer_with_metrics(system, user, config)
         except GenerationError as e:
             log.warning("QUERY_GENERATION_FAILED %r: %s", query, e)
             return QueryResult(answer="", error=f"generation failed: {e}")
-        answer = label_general_knowledge(answer)
+        answer = label_general_knowledge(gen.text)
         elapsed = time.monotonic() - start
         log.info("QUERY %r -> general-knowledge fallback, %.2fs", query, elapsed)
-        return QueryResult(answer=answer, general_knowledge=True)
+        gen_seconds = gen.eval_duration_ns / 1e9 if gen.eval_duration_ns else None
+        return QueryResult(answer=answer, general_knowledge=True,
+                            total_seconds=elapsed, gen_tokens=gen.eval_count, gen_seconds=gen_seconds)
 
     conn = sqlite3.connect(f"file:{config.manifest_db}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
@@ -83,10 +91,11 @@ def answer_query(query: str, config: QueryConfig) -> QueryResult:
 
     system, user = build_prompt(query, fused)
     try:
-        answer = generate_answer(system, user, config)
+        gen = generate_answer_with_metrics(system, user, config)
     except GenerationError as e:
         log.warning("QUERY_GENERATION_FAILED %r: %s", query, e)
         return QueryResult(answer="", error=f"generation failed: {e}")
+    answer = gen.text
 
     # Which leg(s) actually found each source, and at what rank/score — not visible
     # from the fused list alone, since RRF's whole point is combining two differently-
@@ -118,4 +127,9 @@ def answer_query(query: str, config: QueryConfig) -> QueryResult:
             for s in sources
         ),
     )
-    return QueryResult(answer=answer, sources=sources)
+    gen_seconds = gen.eval_duration_ns / 1e9 if gen.eval_duration_ns else None
+    if gen.eval_count and gen_seconds:
+        log.info("QUERY %r generation: %d tokens in %.2fs (%.1f tok/s)",
+                  query, gen.eval_count, gen_seconds, gen.eval_count / gen_seconds)
+    return QueryResult(answer=answer, sources=sources,
+                        total_seconds=elapsed, gen_tokens=gen.eval_count, gen_seconds=gen_seconds)
