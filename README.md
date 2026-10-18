@@ -122,3 +122,10 @@ with the Signal app wired through signal-cli.
    re-index them, rather than rebuilding everything each time. **Implemented** — one
    command runs ingest → chunk → index and emails a report, built to run daily from cron;
    see `Doc/step-8-requirements.md`.
+
+## Troubleshooting
+
+Run `scripts/triage.sh` for an interactive menu of common failures (Signal can't find
+`hybrid-rag__ask_documents`, no Signal reply, slow/timed-out answers, stale index, SSH
+key problems on `npabot-u24`). Checks are read-only; known fixes are offered with an
+`apply the fix? (y/N)` prompt.
