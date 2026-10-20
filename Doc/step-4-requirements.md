@@ -118,11 +118,12 @@ implied elsewhere in this doc. That changes the calculus for both legs:
 - **Local disk footprint.** Rough total for chunk text + vector index + FTS5 index at
   this scale: on the order of tens of GB, comfortably inside this machine's available
   NVMe space (486GB free as of this writing) — disk is not the constraint here, RAM is.
-- **Query-time latency stays fine regardless.** None of the above changes the answer to
-  "will retrieval be fast" — ANN search and FTS5 lookups both stay in the tens-of-
-  milliseconds range at this scale on modern hardware. The scale concern here is entirely
-  about *build-time* resource usage (RAM for the index, wall-clock time to construct it),
-  not query-time responsiveness.
+- **Query-time latency depends on building an ANN index.** FTS5 lookups stay in the
+  tens-of-milliseconds range at this scale (measured: 39 ms at 900k chunks). Dense search
+  is currently a brute-force scan, as `query/dense.py` creates no ANN index: measured
+  38 ms at ~18k chunks, 328 ms at 180k and 1.8 s at 900k. With an IVF-PQ index the 900k
+  search took 6 ms, so an index is needed before the corpus passes roughly 200k chunks.
+  Recall with the index has not yet been measured on real data.
 
 ---
 
