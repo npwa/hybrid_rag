@@ -2,6 +2,7 @@ import { useState } from "react";
 import { api } from "../api";
 import { useLoad } from "../hooks";
 import { fmtAge, fmtInt, fmtMs, fmtPct, fmtTime } from "../format";
+import { Warnings } from "../components/Warnings";
 import { Stat } from "../components/Stat";
 import { TimeToToolChart } from "../components/TimeToToolChart";
 
@@ -23,6 +24,7 @@ export function ToolCalls() {
     return (
       <section className="card" aria-labelledby="h-tc">
         <h2 id="h-tc">Tool-call monitor</h2>
+        <Warnings items={d.warnings} />
         <p role="alert" className="error">{d.detail}</p>
         <p className="muted">The logs live on the bot VM and are copied by <code>{d.sources.pull_script}</code> (read-only, run it from cron or by hand).</p>
       </section>
@@ -48,7 +50,7 @@ export function ToolCalls() {
           Data: OpenClaw logs copied from the bot VM ({d.sources.files} file{d.sources.files === 1 ? "" : "s"}, covering {fmtTime(d.coverage?.first)} to {fmtTime(d.coverage?.last)}),
           matched with the desktop's own query log.
         </p>
-        {stale && <div className="banner bad" role="alert">The newest copied log is {fmtAge(d.sources.age_hours)}. Run <code>scripts/pull_agent_logs.sh</code>; the VM clears /tmp when it reboots, so older history can be lost.</div>}
+        {stale && <div className="banner bad" role="alert">The newest copied log is {fmtAge(d.sources.age_hours)}. Run <code>scripts/pull_agent_logs.sh</code>; the VM clears /tmp when it reboots, so older history can be lost. Runbook: <code>Doc/Runbooks/agent-logs-stale.md</code></div>}
         <div className="stats">
           <Stat label="Agent turns" value={fmtInt(t.turns)} sub={`${fmtInt(t.tool_starts)} started the tool`} />
           <Stat label="Real tool-call rate" value={fmtPct(rate)} sub="turns where the tool was started" tone={rate != null && rate >= 90 ? "good" : "warn"} />
@@ -67,10 +69,11 @@ export function ToolCalls() {
                 <span className={`pill ${BAD.has(f.kind) ? "bad" : ""}`}>{FLAG_LABEL[f.kind] ?? f.kind}</span>{" "}
                 <span className="muted">{fmtTime(f.ts)} · {f.model}</span> — {f.detail}
                 {f.turns_without_tool_after ? <> ({f.turns_without_tool_after} later turn(s) had no tool call)</> : null}
+                {f.runbook && <span className="small muted"> · <code>{f.runbook}</code></span>}
               </li>
             ))}
           </ul>
-          <p className="muted small">Runbooks: <code>Doc/Runbooks/tool-never-called.md</code>, <code>Doc/Runbooks/mcp-server-down.md</code>.</p>
+          <p className="muted small">Each flag names the runbook that explains it.</p>
         </section>
       )}
 

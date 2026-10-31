@@ -411,7 +411,8 @@ milestone's docs are part of its exit criteria.
 | M3 Page 2, Query explorer | Done on `console` (see "M3 as built" below) |
 | M4 Agent log pull and Page 4, Tool-call monitor | Done on `console` (see "M4 as built" below); real failure-case sample still missing |
 | M5 Page 3, Query log analytics | Done on `console` (see "M5 as built" below) |
-| M6 to M7 | Not started |
+| M6 Gold set, postmortems, runbooks | Done on `console` (see "M6 as built" below) |
+| M7 | Not started |
 
 ### Findings during M0 that affect later milestones
 - The real manifest has 285 `ocr_low_confidence` files and 509 `failed` (413 "OCR produced no text", 12 permission
@@ -551,3 +552,22 @@ milestone's docs are part of its exit criteria.
 - **Tests:** 200 pass (+16): hand-computed fixture month, independent count on the generated month, text/JSONL agreement,
   partial-day merge, threshold override, recurring terms, lists, window and validation, empty logs, masking, 6 browser tests.
 - **Percentiles** use nearest rank, so on few points a median is one of the two middle values.
+
+### M6 as built (2026-10-31)
+- **Gold set:** `console/gold.py` (format, validation, run, baseline comparison) and `scripts/run_gold_set.py` (retrieval only through
+  `query.engine.retrieve`, so no language model and a few seconds; `--set KEY=VALUE` and `--query-config` for what-if runs, `--save-report`,
+  `--save-baseline`, exit 1 on failure or regression). `config/gold_questions.example.yaml` fits the demo data; the real
+  `config/gold_questions.yaml` is git-ignored. A starter set of 16 questions was drawn from the real query logs (expected sources
+  = what production returned; **to be confirmed by the owner**). Real baseline: 16/16; threshold 0.6 fails 5, threshold 1.2 fails the 3 refusal
+  questions (T-GOLD-2 on real data).
+- **Page 2 compare view (Q-1):** `GET /api/v1/gold` and the "Gold set" card on the explorer (masked in privacy mode); exploring a gold
+  question shows a banner comparing the saved run with the live result.
+- **Postmortems:** `Doc/Postmortems/PM-01..06` plus an index; where a time or count was not recorded the text says so.
+- **Runbooks:** seven new (`console-down`, `ollama-down`, `no-relevant-result`, `slow-answers`, `agent-logs-stale`, `vm-frozen-or-rebooted`,
+  `data-sources-missing`), 12 in total. `console/runbooks.py` registers 21 warnings; `GET /api/v1/health`, the tool-call summary and the
+  query stats now return `warnings`, flags carry `runbook`, the UI shows them (`components/Warnings.tsx`). `triage.sh` section headers print
+  the runbook file. **Not emitted yet:** `tool_slow` is registered but no code raises it (time to tool is shown, not judged).
+- **Tests:** 227 pass (+27): gold runner and API (12), runbook/link checks (12 incl. triage), 3 browser tests. T-DOC-1 now scans docs, UI
+  source, code and `triage.sh`.
+- **Observation (not a defect of M6):** `scripts/triage.sh 4` showed only the embedding model loaded on Ollama a few minutes after the last
+  question; the 35B model had been unloaded, so the next Signal question pays a model reload. See `slow-answers.md`.

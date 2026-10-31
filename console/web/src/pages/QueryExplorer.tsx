@@ -2,6 +2,8 @@ import { useState } from "react";
 import { api, ApiError, type Exploration, type Health } from "../api";
 import { GateCard } from "../components/GateCard";
 import { HitLists } from "../components/HitLists";
+import { GoldCard, GoldCompare } from "../components/GoldCard";
+import { useLoad } from "../hooks";
 
 const DEMO_EXAMPLES = ["how do I reset the demo widget", "which seedlings go in the raised bed", "who was wolfgang amadeus mozart"];
 
@@ -12,6 +14,7 @@ export function QueryExplorer({ health }: { health: Health | null }) {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Exploration | null>(null);
   const demo = health?.demo ?? false;
+  const gold = useLoad(api.gold, []);
 
   async function run(q: string) {
     if (!q.trim() || busy) return;
@@ -45,6 +48,7 @@ export function QueryExplorer({ health }: { health: Health | null }) {
           <div className="timings" aria-label="Timings">
             {Object.entries(result.timings).map(([k, v]) => <span key={k} className="pill"><b>{k.replace("_s", "")}</b> {(v * 1000).toFixed(0)} ms</span>)}
           </div>
+          <GoldCompare report={gold.data} result={result} />
           <GateCard x={result} />
           {(result.answer || result.generation_error) && (
             <section className="card" aria-labelledby="h-answer">
@@ -55,6 +59,7 @@ export function QueryExplorer({ health }: { health: Health | null }) {
           <HitLists x={result} />
         </>
       )}
+      <GoldCard report={gold.data} onExplore={(q) => { setText(q); run(q); window.scrollTo({ top: 0 }); }} />
     </>
   );
 }

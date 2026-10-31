@@ -1,9 +1,11 @@
 // Typed, read-only client for the console API (Doc/step-9-requirements.md section 5).
 
+export interface Warn { id: string; text: string; runbook: string | null }
 export interface Source { name: string; path: string; present: boolean; read_only: boolean | null; note: string | null }
 export interface Health {
   status: string; version: string; demo: boolean; time: string;
   sources: Source[];
+  warnings: Warn[];
   services: Record<string, { state: string; port?: number; url?: string }>;
   maintenance: {
     last_run: { started: string | null; ended: string | null; result: string | null; seconds: number | null;
@@ -57,9 +59,9 @@ export interface DayRow {
   day: string; turns: number; tool_starts: number; looks_like_tool_call: number; desktop_mcp_calls: number; matched: number;
   agent_starts_without_desktop_call: number; mcp_connect_failures: number; host_gaps: number; models: string[]; time_to_tool_ms: Pctl;
 }
-export interface Flag { kind: string; ts: string; model: string; detail: string; turns_without_tool_after?: number }
+export interface Flag { kind: string; runbook?: string | null; ts: string; model: string; detail: string; turns_without_tool_after?: number }
 export interface ToolCalls {
-  available: boolean; detail?: string;
+  available: boolean; detail?: string; warnings?: Warn[];
   sources: { files: number; newest_file: string | null; age_hours: number | null; agent_logs_dir: string; config_summary: Record<string, unknown> | null; pull_script: string };
   days?: number; coverage?: { first: string | null; last: string | null };
   totals?: { turns: number; tool_starts: number; matched: number; matched_by_time_only: number; agent_starts_without_desktop_call: number; desktop_calls_without_agent_start: number;
@@ -73,7 +75,7 @@ export interface ToolCalls {
 export interface QStats { count: number; p50: number | null; p95: number | null; max: number | null }
 export interface QDay { day: string; queries: number; answered: number; no_relevant: number; general_knowledge: number; error: number; slow: number; latency_s: QStats; tok_per_s: number | null; format: string | null }
 export interface QueryStats {
-  available: boolean; days: number; slow_seconds: number; masked: boolean;
+  available: boolean; warnings: Warn[]; days: number; slow_seconds: number; masked: boolean;
   coverage: { days_with_data: number; first: string | null; last: string | null; jsonl_days: number; text_days: number };
   totals: { queries: number; system_queries: number; by_outcome: Record<string, number>; zero_sources: number; timed: number; slow: number };
   rates: { no_relevant: number | null; general_knowledge: number | null; error: number | null; zero_sources: number | null; slow: number | null };
@@ -83,6 +85,14 @@ export interface QueryStats {
 }
 export interface QueryRow { ts: string; query: string; outcome: string; caller: string | null; total_s: number | null; n_sources: number; sources: string[]; error: string | null }
 export interface QueryList { kind: string; days: number; slow_seconds: number; total: number; masked: boolean; items: QueryRow[] }
+
+export interface GoldItem { id: string; question: string; expect: string; verdict: string; passed: boolean; problems: string[]; hits: number;
+  nearest_distance: number | null; first_expected_rank: number | null; within: number; sources_any: string[]; top_sources: string[] }
+export interface GoldReport {
+  available: boolean; detail?: string; masked?: boolean; saved_at?: string; overrides?: string[];
+  settings?: { distance_threshold: number; min_hits: number; top_k_fused: number; rrf_k: number };
+  total?: number; passed?: number; failed?: number; compared_with?: { regressions: string[]; fixed: string[]; new: string[] } | null; items?: GoldItem[];
+}
 
 export class ApiError extends Error {
   constructor(public status: number, public detail: string) { super(`${status}: ${detail}`); }
@@ -121,5 +131,6 @@ export const api = {
   toolcalls: (days: number) => get<ToolCalls>("/toolcalls/summary", { days }),
   queryStats: (days: number) => get<QueryStats>("/queries/stats", { days }),
   queryList: (kind: string, days: number) => get<QueryList>("/queries/slow", { kind, days, limit: 15 }),
+  gold: () => get<GoldReport>("/gold"),
   runs: (limit = 10) => get<{ total: number; items: Run[] }>("/maintenance/runs", { limit }),
 };

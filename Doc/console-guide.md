@@ -111,8 +111,36 @@ identical questions (ignoring case and a final `?`) asked at least twice, with c
 such as `[masked-3fa9c1d2]`. The same question always gets the same code, so recurrence stays visible; the common-words list
 is hidden because words would reveal the text.
 
+## Gold question set (regression check for retrieval)
+A short list of real questions with the documents that must be found, run through the same retrieval production uses (no language
+model, a few seconds). Use it **before and after** changing a relevance setting, the embedding model or the index, to see what a
+change would break.
+
+    scripts/run_gold_set.py                        # real index; questions from config/gold_questions.yaml (private, git-ignored)
+    scripts/run_gold_set.py --save-baseline        # remember this run (logs/gold_baseline.json); also saves logs/gold_report.json
+    scripts/run_gold_set.py --set relevance_min_hits=2          # try a setting without changing any file: which questions break?
+    scripts/run_gold_set.py --query-config scratch.yaml         # the same with a scratch copy of the query config
+    scripts/run_gold_set.py --demo                 # synthetic dataset and config/gold_questions.example.yaml
+
+A question passes when the relevance gate gives the expected verdict (`expect: answered`, the default, or `no_relevant` for questions the
+corpus must not answer) and, for answered ones, a document whose path contains one of `sources_any` is in the top `within` results.
+Later runs list regressions against the baseline; the exit status is 1 on any failure or regression. The format is documented in
+`console/gold.py`; `config/gold_questions.example.yaml` fits the demo data. Real questions are personal data, so
+`config/gold_questions.yaml` is not tracked. A starter set of 16 questions from your own logs was created on 2026-10-31 (13 answerable,
+3 that must be refused); confirm the expected sources and extend it. On the real index it passes 16/16, and the same set fails when
+the distance threshold is lowered to 0.6 (5 answerable questions refused) or raised to 1.2 (the 3 refusals answered): the useful window is
+between those, as the step-5 calibration found.
+
+On the **Query explorer** page, the "Gold set" card shows the last saved run; "Explore" on a row runs that question, and a banner compares
+what the saved run said with what retrieval gives now.
+
+## Runbooks and postmortems
+Every warning the console shows names its runbook in `Doc/Runbooks/` (the list is `GET /api/v1/runbooks`, defined in `console/runbooks.py`;
+`scripts/triage.sh` sections print the same file). A test checks that each warning has a file and that each file is linked. Postmortems of
+six real incidents are in `Doc/Postmortems/` (`README.md` is the index).
+
 ## API (for scripts)
-Interactive docs at `/docs`; snapshot in `Doc/api/openapi.json`. Page 4 uses `GET /api/v1/toolcalls/summary?days=30`. Page 3 uses `GET /api/v1/queries/stats?days=30` and `GET /api/v1/queries/slow?kind=slow|no_result|error&days=30&limit=15`. Page 2 uses `POST /api/v1/explore` (body `{"query": "...", "generate": false}`). Page 1 uses `/api/v1/health`,
+Interactive docs at `/docs`; snapshot in `Doc/api/openapi.json`. Page 4 uses `GET /api/v1/toolcalls/summary?days=30`. The gold card uses `GET /api/v1/gold`, warnings link through `GET /api/v1/runbooks`. Page 3 uses `GET /api/v1/queries/stats?days=30` and `GET /api/v1/queries/slow?kind=slow|no_result|error&days=30&limit=15`. Page 2 uses `POST /api/v1/explore` (body `{"query": "...", "generate": false}`). Page 1 uses `/api/v1/health`,
 `/api/v1/index/summary`, `/api/v1/index/failures`, `/api/v1/index/causes`, `/api/v1/maintenance/runs`.
 
 ## Privacy

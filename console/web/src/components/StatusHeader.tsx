@@ -1,4 +1,5 @@
 import type { Health } from "../api";
+import { Warnings } from "./Warnings";
 import { fmtAge, fmtTime } from "../format";
 
 function Pill({ label, state }: { label: string; state: string }) {
@@ -7,11 +8,12 @@ function Pill({ label, state }: { label: string; state: string }) {
 }
 
 export function StatusHeader({ health, error }: { health: Health | null; error: string | null }) {
-  if (error) return <div className="status bad-bar" role="alert">Cannot reach the console API: {error}</div>;
+  if (error) return <div className="status bad-bar" role="alert">Cannot reach the console API: {error}. Runbook: <code>Doc/Runbooks/console-down.md</code></div>;
   if (!health) return <div className="status" aria-busy="true">Loading status…</div>;
   const m = health.maintenance;
   const last = m.last_run;
   return (
+    <>
     <div className="status" role="status" aria-label="System status">
       <Pill label="Console" state={health.status} />
       <Pill label="MCP server" state={health.services.mcp_server?.state ?? "unknown"} />
@@ -22,5 +24,7 @@ export function StatusHeader({ health, error }: { health: Health | null; error: 
       </span>
       <span className="muted version">v{health.version}</span>
     </div>
+    <Warnings items={health.warnings} />
+    </>
   );
 }

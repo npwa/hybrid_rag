@@ -1,0 +1,37 @@
+# Gold question set for the SYNTHETIC demo dataset (scripts/make_synthetic_data.py). Used by `scripts/run_gold_set.py --demo`
+# and by the tests. Your own set goes in config/gold_questions.yaml (git-ignored: real questions are personal data); see
+# console/gold.py for the format. `sources_any` entries are substrings of the document path; `within` limits the rank.
+questions:
+  - id: demo-01
+    question: "when does the ferry to the island leave"
+    sources_any: ["Travel/Trips/ferry", "Travel/Trips/timetable"]
+    within: 3
+    note: "travel timetable question"
+  - id: demo-02
+    question: "which seedlings go in the raised bed"
+    sources_any: ["Garden/Plans/"]
+    within: 3
+  - id: demo-03
+    question: "what is the subnet of the guest network"
+    sources_any: ["Network/Setup/"]
+    within: 3
+  - id: demo-04
+    question: "how much was the shipping on the last invoice"
+    sources_any: ["Gadgets/Receipts/"]
+    within: 3
+  - id: demo-05
+    question: "which museum is on the itinerary"
+    sources_any: ["Travel/Trips/museum", "Travel/Trips/itinerary"]
+    within: 3
+  - id: demo-06
+    question: "where did I store the firewall backup"
+    sources_any: ["Network/Setup/firewall"]
+    within: 3
+  - id: demo-07
+    question: "how many moons does jupiter have"
+    expect: no_relevant
+    note: "nothing in the corpus: the gate must refuse"
+  - id: demo-08
+    question: "who was mozart the composer"
+    expect: no_relevant
+    note: "false-lead style question: the gate must refuse"

@@ -88,3 +88,5 @@ tr.row-bad td { background: var(--bad-bg); }
 .tab[aria-selected="true"] { background: var(--accent); color: #fff; border-color: var(--accent); }
 .nowrap { white-space: nowrap; }
 .terms { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; }
+.warnlist { margin: 0; padding-left: 1.2em; }
+.banner.good { background: var(--good-bg); color: var(--good); }

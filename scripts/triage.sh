@@ -46,7 +46,7 @@ ok()   { printf '  [%s OK %s] %s\n' "$C_OK" "$C_OFF" "$*"; }
 bad()  { FAILS=$((FAILS+1)); printf '  [%sFAIL%s] %s\n' "$C_BAD" "$C_OFF" "$*"; }
 warn() { printf '  [%sWARN%s] %s\n' "$C_WARN" "$C_OFF" "$*"; }
 info() { printf '         %s\n' "$*"; }
-hdr()  { printf '\n== %s ==\n' "$*"; }
+hdr()  { printf '\n== %s ==\n' "$1"; [ -n "${2:-}" ] && info "Runbook: Doc/Runbooks/$2"; return 0; }   # hdr "title" [runbook-file]
 
 confirm() {  # confirm "description" -> 0 only on explicit y/Y (or always with -y)
   if [ "$ASSUME_YES" = 1 ]; then echo "  -> $1 apply the fix? (y/N) y  [--yes]"; return 0; fi
@@ -97,7 +97,7 @@ start_mcp() {
 # ---- individual checks -------------------------------------------------------------
 
 check_mcp_server() {
-  hdr "MCP server on this desktop"
+  hdr "MCP server on this desktop" mcp-server-down.md
   if mcp_listening; then
     ok "port $MCP_PORT is listening"
     local code
@@ -123,7 +123,7 @@ check_ip() {
 }
 
 check_bot_up() {
-  hdr "$BOT_HOST reachable / booted"
+  hdr "$BOT_HOST reachable / booted" vm-frozen-or-rebooted.md
   if bot_reachable; then ok "ping works"; else
     bad "no ping. VM is down, still booting, or network is out."
     if command -v virsh >/dev/null && virsh list --all 2>/dev/null | grep -q "$BOT_VM.*shut off"; then
@@ -166,7 +166,7 @@ check_gateway() {
 }
 
 check_mcp_from_bot() {
-  hdr "OpenClaw's view of the MCP server"
+  hdr "OpenClaw's view of the MCP server" mcp-server-down.md
   local fails last
   local logtxt; logtxt=$(bot_logtext) || return 1
   fails=$(grep -c 'failed to start server "hybrid-rag"' <<<"$logtxt")
@@ -185,7 +185,7 @@ print('primary model:', d.get('primary_model'))" | sed 's/^/         /'
 }
 
 check_tool_called() {
-  hdr "Is the MCP tool actually being called?"
+  hdr "Is the MCP tool actually being called?" tool-never-called.md
   local n; n=$(grep -c 'POST /mcp' logs/run_stdout.log 2>/dev/null); info "POST /mcp requests in run_stdout.log: ${n:-0}"
   local q; q=$(ls -t logs/query_*.log 2>/dev/null | head -1)
   if [ -n "$q" ] && [ -s "$q" ]; then ok "latest query log has content: $q"; tail -3 "$q" | cut -c1-200 | sed 's/^/         /'
@@ -196,7 +196,7 @@ check_tool_called() {
 }
 
 check_timing() {
-  hdr "Slow answers / 60s MCP timeout"
+  hdr "Slow answers / 60s MCP timeout" slow-answers.md
   if command -v ollama >/dev/null; then info "loaded models:"; ollama ps 2>&1 | sed 's/^/           /'; fi
   command -v nvidia-smi >/dev/null && nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total --format=csv,noheader | sed 's/^/         GPU: /'
   local q; q=$(ls -t logs/query_*.log 2>/dev/null | head -1)
@@ -206,7 +206,7 @@ check_timing() {
 }
 
 check_ollama() {
-  hdr "Ollama and embedding model"
+  hdr "Ollama and embedding model" ollama-down.md
   if curl -s -m3 http://localhost:11434/api/tags >/dev/null; then ok "Ollama answering on :11434"
     curl -s -m3 http://localhost:11434/api/tags | grep -q nomic-embed-text && ok "embedding model nomic-embed-text present" || bad "nomic-embed-text not pulled (ollama pull nomic-embed-text)"
   else bad "Ollama not answering"
@@ -215,14 +215,14 @@ check_ollama() {
 }
 
 check_engine() {
-  hdr "Query engine end-to-end (CLI)"
+  hdr "Query engine end-to-end (CLI)" no-relevant-result.md
   info "running: run_query.py --query ... (same engine the MCP tool uses)"
   if timeout 120 "$PY" run_query.py --query "What documents are indexed?" 2>&1 | tail -8 | cut -c1-200 | sed 's/^/           /'; then :; fi
   info "Empty/'unknown' answers: check Ollama (above), then rebuild the index: $PY run_index.py"
 }
 
 check_stale() {
-  hdr "Stale index (new/changed documents not showing up)"
+  hdr "Stale index (new/changed documents not showing up)" stale-index.md
   local m=logs/maintenance.log problem=0
   if [ -f "$m" ]; then info "last maintenance runs:"; tail -4 "$m" | cut -c1-200 | sed 's/^/           /'
     # judge only the most recent completed run, not older failures still in the log
@@ -278,7 +278,7 @@ check_agent_pull() {
 
 check_console() {
   local optional="${1:-0}"
-  hdr "Operator console (port $CONSOLE_PORT)"
+  hdr "Operator console (port $CONSOLE_PORT)" console-down.md
   if ! console_listening; then
     if [ "$optional" = 1 ]; then warn "console not running (optional). Start it with: ./run_console.py   (menu 10 offers to start it)"; return 0; fi
     bad "nothing listening on port $CONSOLE_PORT (console not running)"

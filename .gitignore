@@ -48,3 +48,6 @@ console/web/dist/
 openclaw-*.log
 # scrubbed fixtures for the parser tests (gitignore has no inline comments)
 !tests/fixtures/agent/openclaw-*.log
+
+# The real gold question set holds personal questions; config/gold_questions.example.yaml is tracked.
+config/gold_questions.yaml

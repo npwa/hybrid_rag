@@ -17,6 +17,8 @@ from console.config import ConsoleConfig
 from console.health import build_health
 from console.failures import CAUSES
 from console import queries as queries_mod
+from console import gold as gold_mod
+from console import runbooks
 from console.readers import agent_log, maintenance_log, query_log
 from console.readers.lance_reader import LanceReadOnly
 from console.readers.sqlite_ro import FAILURE_SORTS, failures as failures_query, open_ro, summary as summary_query
@@ -147,8 +149,12 @@ def create_app(config: ConsoleConfig, embed=None, query_config=None) -> FastAPI:
                    "age_hours": age,
                    "agent_logs_dir": str(config.agent_logs_dir),
                    "config_summary": agent_cfg, "pull_script": "scripts/pull_agent_logs.sh"}
+        warnings = []
+        if files and age is not None and age > 36:
+            warnings.append({"id": "agent_logs_stale", "text": f"The newest copied log is {age:.0f} h old.", "runbook": runbooks.runbook_path("agent_logs_stale")})
         if not files:
-            return {"available": False, "sources": sources,
+            return {"available": False, "sources": sources, "warnings": [{"id": "agent_logs_missing", "text": "No OpenClaw logs copied yet.",
+                                                                          "runbook": runbooks.runbook_path("agent_logs_missing")}],
                     "detail": "No OpenClaw logs found. Run scripts/pull_agent_logs.sh to copy them from the bot VM."}
         qev = []
         for i in range(days + 1):
@@ -156,9 +162,31 @@ def create_app(config: ConsoleConfig, embed=None, query_config=None) -> FastAPI:
         calls = agent_log.mcp_calls_from_events(qev)
         result = agent_log.analyze(events, calls, days=days, now=now,
                                    fallback_model=(agent_cfg or {}).get("primary_model"))
-        return {"available": True, "sources": sources, "jsonl_days_with_mcp_records": sum(
+        for f in result["flags"]:
+            f["runbook"] = runbooks.runbook_path(f["kind"])
+        return {"available": True, "sources": sources, "warnings": warnings, "jsonl_days_with_mcp_records": sum(
                     1 for i in range(days + 1) if (config.logs_dir / f"query_{(now.date() - timedelta(days=i)).isoformat()}.jsonl").exists()),
                 **result}
+
+    @app.get("/api/v1/gold", summary="Result of the last gold question set run (scripts/run_gold_set.py --save-report)")
+    def gold_report():
+        rep = gold_mod.load_report(config.logs_dir)
+        if rep is None:
+            return {"available": False, "detail": "No gold set run saved yet. Run scripts/run_gold_set.py --save-report (see the console guide)."}
+        from console.failures import mask_path, mask_text
+        mask = config.mask_queries
+        saved = (config.logs_dir / gold_mod.REPORT_NAME).stat().st_mtime
+        items = [{**{k: r[k] for k in ("id", "expect", "verdict", "passed", "problems", "hits", "nearest_distance", "first_expected_rank", "within")},
+                  "question": mask_text(r["question"]) if mask else r["question"],
+                  "sources_any": [] if mask else r.get("sources_any", []),
+                  "top_sources": [mask_path(x) for x in r["top_sources"]] if mask else r["top_sources"]} for r in rep["results"]]
+        return {"available": True, "masked": mask, "saved_at": datetime.fromtimestamp(saved).strftime("%Y-%m-%dT%H:%M:%S"),
+                "settings": rep["settings"], "overrides": rep.get("overrides", []), "total": rep["total"], "passed": rep["passed"],
+                "failed": rep["failed"], "compared_with": rep.get("compared_with"), "items": items}
+
+    @app.get("/api/v1/runbooks", summary="Every warning the console can show and the runbook that explains it")
+    def runbook_index():
+        return runbooks.listing()
 
     @app.get("/api/v1/queries/stats", summary="Query log aggregates: volume, latency, outcome rates, recurring questions")
     def queries_stats(days: int = Query(30, ge=1, le=365), slow_seconds: float | None = Query(None, gt=0, description="override the configured slow threshold")):

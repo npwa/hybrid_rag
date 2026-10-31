@@ -9,6 +9,7 @@ from pathlib import Path
 from console import __version__
 from console.config import ConsoleConfig
 from console.readers import maintenance_log
+from console.runbooks import runbook_path
 from console.readers.lance_reader import LanceReadOnly
 from console.readers.sqlite_ro import is_read_only, open_ro
 
@@ -83,12 +84,28 @@ def build_health(config: ConsoleConfig, now: datetime | None = None) -> dict:
         }
 
     problems = [s["name"] for s in sources if s["name"] in ("manifest", "lancedb") and not s["present"]]
+    warnings = []
+
+    def warn(wid: str, text: str):
+        warnings.append({"id": wid, "text": text, "runbook": runbook_path(wid)})
+    if services["mcp_server"]["state"] == "down":
+        warn("mcp_down", f"The MCP server is not listening on :{config.mcp_port}; Signal cannot reach the documents.")
+    if services["ollama"]["state"] == "down":
+        warn("ollama_down", f"Ollama does not answer at {config.ollama_url}; questions cannot be embedded or answered.")
+    if last is not None and last.result == "FAILED":
+        warn("maintenance_failed", "The last maintenance run failed.")
+    elif stale:
+        warn("index_stale", "The last successful index step is older than the limit; new documents may be missing.")
+    for s in sources:
+        if s["name"] in ("manifest", "lancedb", "maintenance_log") and not s["present"]:
+            warn("source_missing", f"{s['name']} not found at {s['path']}.")
     return {
         "status": "ok" if not problems else "degraded",
         "version": __version__,
         "demo": config.demo,
         "time": now.strftime("%Y-%m-%dT%H:%M:%S"),
         "sources": sources,
+        "warnings": warnings,
         "services": services,
         "maintenance": {
             "last_run": None if last is None else {

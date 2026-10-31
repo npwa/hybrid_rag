@@ -16,6 +16,7 @@ from collections import Counter, defaultdict
 from datetime import timedelta
 
 from console.config import ConsoleConfig
+from console.runbooks import runbook_path
 from console.failures import mask_message, mask_path, mask_text
 from console.readers import query_log
 from console.readers.agent_log import _stats
@@ -97,7 +98,15 @@ def stats(config: ConsoleConfig, days: int, slow_seconds: float | None = None, t
         tc.update(terms(e.query))
     top_terms = [] if mask else [{"term": t, "queries": n} for t, n in sorted(tc.items(), key=lambda kv: (-kv[1], kv[0]))[:15] if n >= 2]
 
+    warnings = []
+    for wid, text, hit in (
+            ("no_relevant_result", f"{rates['no_relevant']}% of questions found nothing relevant.", (rates["no_relevant"] or 0) > 15),
+            ("query_errors", f"{totals['by_outcome']['error']} question(s) failed with an error.", totals["by_outcome"]["error"] > 0),
+            ("slow_answers", f"{rates['slow']}% of timed questions took {slow_s:g} s or longer.", (rates["slow"] or 0) > 10)):
+        if hit:
+            warnings.append({"id": wid, "text": text, "runbook": runbook_path(wid)})
     return {
+        "warnings": warnings,
         "available": bool(events), "days": days, "slow_seconds": slow_s, "masked": mask,
         "coverage": {"days_with_data": len(fmt), "first": min(fmt) if fmt else None, "last": max(fmt) if fmt else None,
                      "jsonl_days": sum(1 for f in fmt.values() if f == "jsonl"), "text_days": sum(1 for f in fmt.values() if f == "text")},

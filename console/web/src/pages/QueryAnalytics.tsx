@@ -3,6 +3,7 @@ import { api } from "../api";
 import type { QueryRow } from "../api";
 import { useLoad } from "../hooks";
 import { fmtInt, fmtPct, fmtTime } from "../format";
+import { Warnings } from "../components/Warnings";
 import { Stat } from "../components/Stat";
 import { LatencyPerDay, QueriesPerDay } from "../components/QueryCharts";
 
@@ -77,6 +78,7 @@ export function QueryAnalytics() {
           (text-only days have no caller information).
           {t.system_queries > 0 && <> {fmtInt(t.system_queries)} automatic “### Task:” prompt(s) from Open WebUI are left out of every number below.</>}
         </p>
+        <Warnings items={d.warnings} />
         {d.masked && <div className="banner warn" role="status">Privacy mode is on: question text and file names are replaced by short codes. The same question always gets the same code.</div>}
         <div className="stats">
           <Stat label="Questions" value={fmtInt(t.queries)} sub={Object.entries(d.by_caller).map(([k, v]) => `${v} ${k}`).join(", ")} />
@@ -100,7 +102,7 @@ export function QueryAnalytics() {
           ))}
         </div>
         <QueryTable kind={kind} days={days} />
-        <p className="muted small">“No relevant result”: nothing scored close enough, so the assistant declined (see the Query explorer to see why). Runbook: <code>Doc/Runbooks/</code>.</p>
+        <p className="muted small">“No relevant result”: nothing scored close enough, so the assistant declined (see the Query explorer to see why). Runbook: <code>Doc/Runbooks/no-relevant-result.md</code>.</p>
       </section>
 
       <section className="card" aria-labelledby="h-rec">

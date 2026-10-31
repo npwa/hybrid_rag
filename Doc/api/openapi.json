@@ -121,6 +121,22 @@
     "summary": "How retrieval reached its ranking for one question (no side effects on production logs)"
    }
   },
+  "/api/v1/gold": {
+   "get": {
+    "operationId": "gold_report_api_v1_gold_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Result of the last gold question set run (scripts/run_gold_set.py --save-report)"
+   }
+  },
   "/api/v1/health": {
    "get": {
     "operationId": "health_api_v1_health_get",
@@ -486,6 +502,22 @@
      }
     },
     "summary": "Query log aggregates: volume, latency, outcome rates, recurring questions"
+   }
+  },
+  "/api/v1/runbooks": {
+   "get": {
+    "operationId": "runbook_index_api_v1_runbooks_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Every warning the console can show and the runbook that explains it"
    }
   },
   "/api/v1/toolcalls/summary": {
