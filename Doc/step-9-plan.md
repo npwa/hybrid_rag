@@ -407,7 +407,8 @@ milestone's docs are part of its exit criteria.
 |---|---|
 | M0 Scaffolding and synthetic data | Done on `console` (see "As built" in the requirements doc when written): package, config, pytest, `.gitignore`, generator, 12 tests |
 | M1 Backend foundation and structured query log | Done on `console` (see "M1 as built" below) |
-| M2 to M7 | Not started |
+| M2 Page 1, Index health | Done on `console` (see "M2 as built" below) |
+| M3 to M7 | Not started |
 
 ### Findings during M0 that affect later milestones
 - The real manifest has 285 `ocr_low_confidence` files and 509 `failed` (413 "OCR produced no text", 12 permission
@@ -447,3 +448,31 @@ milestone's docs are part of its exit criteria.
   restarted, so no JSONL records appear until then (`triage.sh 10` warns about this).
 - Merge note: `alternate` also edits `query/engine.py` and `query/logging_setup.py`. This milestone does not touch
   `logging_setup.py`; expect a small textual conflict in `engine.py` (timing/metrics lines) if both are merged.
+
+### M2 as built (2026-10-31)
+- **Backend:** `console/failures.py` (cause classifier, ticket and runbook map, path/message masking), extended
+  `sqlite_ro.summary()` and `failures()`; endpoints `/api/v1/index/summary` (outcome groups, percentages of attempted
+  files, types, causes, ANN gauge), `/index/failures` (cause/type/status/path filters, sort, pagination, validated),
+  `/index/causes`, `/maintenance/runs`. First request is warmed up (lancedb import moved to startup): real-data
+  summary 38 ms, failures 20 ms.
+- **Frontend:** React 19 + TypeScript 7 + Vite 8 in `console/web` (npm; `package-lock.json` tracked, `dist` and
+  `node_modules` ignored). Hash-routed shell with four tabs; page 1 complete; the others say which milestone builds them.
+  Plain CSS with light/dark themes; numbers always printed beside colour; works at 390 px width.
+- **HYR-04 fixed in code:** `exclude_prefixes` (default `["~$"]`) in `ingest/classify.py` and config; ticket updated.
+- **Triage:** console check C5 (API file count equals a direct manifest count).
+- **Docs:** `Doc/console-guide.md`, `Doc/Runbooks/{stale-index,ann-index-needed,index-failure-causes}.md`,
+  README, REQUIREMENTS.md (Node, Playwright), HYR-04.
+- **Tests:** 116 pass in about 20 s: classifier table, SQL cross-checks, filters/sort/paging/validation, masking, ANN
+  states, maintenance runs, ingest classification, docs-link checks, triage C5, and 11 Chromium tests (render with no
+  console errors, numbers equal the API, drill-down from cause to file list, sorting/paging, stale banner, API error
+  and API-down states, phone width, dark mode).
+- **Real-data check (read-only, checksum verified):** 2,539 files: 1,356 indexed (72.1 % of 1,880 attempted), 509
+  failed (27.1 %), 15 need attention, 659 skipped. Failure causes: 413 no-text images, 285 low-confidence OCR
+  (indexed), 75 OCR below threshold, 15 permission denied, 10 encrypted, 4 near-empty conversions, 3 lock files,
+  2 damaged, 1 empty, 1 conversion-script error.
+- **Clarified number:** the earlier "75 low-OCR files" are the 75 files *failed* for OCR confidence under 40.0; the
+  285 `ocr_low_confidence` files are indexed but flagged. Page 1 shows both, and percentages use attempted files
+  (denominator 1,880), not all files seen (2,539).
+- **Not done (by design):** nothing is written to the manifest, so the 3 existing lock-file rows stay `failed` until
+  the next ingest run reclassifies them as `skipped`.
+- **Changes to existing production code:** `ingest/classify.py`, `ingest/config.py` (HYR-04 only).

@@ -74,6 +74,11 @@ exclude_suffixes:
   - "~"
   - "#"
 
+# Leading characters that mark Office lock files (e.g. "~$Budget.xlsx") -> excluded.
+# Optional: defaults to ["~$"] when omitted, so older configs keep working. (HYR-04)
+exclude_prefixes:
+  - "~$"
+
 # --- README/TODO handling (§4b, §6) ---
 # TODO-named files get identical treatment to README-named files: same classification,
 # same convert_to_md.sh conversion path (unless already .md, then passthrough).

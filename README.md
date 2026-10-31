@@ -137,17 +137,18 @@ retrieval reached an answer, query-log analytics and OpenClaw tool-call behavior
 changes the index, the manifest or any server's behavior and runs as its own process.
 Requirements: `Doc/step-9-requirements.md`; plan and status: `Doc/step-9-plan.md`.
 
-Status: **milestone M1** (API foundation). Available now: `GET /api/v1/health` (status
-header data and read-only proof), `GET /api/v1/index/summary`, interactive API docs at
-`/docs`. The pages themselves (index health, query explorer, query analytics, tool-call
-monitor) are not built yet.
+Status: **milestone M2**. The **Index health** page works: files by outcome, type and failure cause,
+maintenance history, index staleness, the ANN-index gauge and a filterable list of problem files, each linked to a
+ticket and a runbook. The other three pages (query explorer, tool-call monitor, query analytics) are tabs that say
+"not built yet". User guide: `Doc/console-guide.md`. API docs at `/docs` while it runs.
 
 ```bash
 pip install -r requirements-dev.txt                  # adds pytest, httpx for the console tests
 python scripts/make_synthetic_data.py                 # fictional demo data in ./demo_data
 ./run_console.py --demo                               # http://127.0.0.1:8300 on the demo data
 ./run_console.py --config config/console_config.yaml # real data (copy the example config first)
-python -m pytest                                      # tests; need no Ollama and no real data
+(cd console/web && npm install && npm run build)     # build the web UI once (Node 20+); the API serves console/web/dist
+python -m pytest                                      # tests; need no Ollama and no real data (UI tests need: python -m playwright install chromium)
 ```
 
 The console binds to 127.0.0.1 only; the data it shows is personal and there is no

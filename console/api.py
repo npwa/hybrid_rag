@@ -3,15 +3,19 @@ Created per config so tests and demo mode can point it at any data root."""
 from __future__ import annotations
 
 import logging
+import threading
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from console import __version__
 from console.config import ConsoleConfig
 from console.health import build_health
-from console.readers.sqlite_ro import index_counts, open_ro
+from console.failures import CAUSES
+from console.readers import maintenance_log
+from console.readers.lance_reader import LanceReadOnly
+from console.readers.sqlite_ro import FAILURE_SORTS, failures as failures_query, open_ro, summary as summary_query
 
 log = logging.getLogger("console")
 
@@ -22,6 +26,13 @@ _PLACEHOLDER = """<!doctype html><meta charset="utf-8"><title>Hybrid RAG console
 
 
 def create_app(config: ConsoleConfig) -> FastAPI:
+    def _warm_up():   # importing lancedb takes ~0.9 s; do it before the first request needs it (API3: under 1 s)
+        try:
+            import lancedb  # noqa: F401
+        except Exception:
+            pass
+    threading.Thread(target=_warm_up, daemon=True).start()
+
     app = FastAPI(title="Hybrid RAG console", version=__version__,
                   description="Read-only observability API for the Hybrid RAG pipeline.")
 
@@ -34,17 +45,60 @@ def create_app(config: ConsoleConfig) -> FastAPI:
     def health():
         return build_health(config)
 
-    @app.get("/api/v1/index/summary", summary="Counts of files and chunks by status")
+    def _unavailable(detail: str):
+        return JSONResponse(status_code=503, content={"error": "source_unavailable", "detail": detail})
+
+    @app.get("/api/v1/index/summary", summary="Files and chunks by status, outcome, type and failure cause")
     def index_summary():
         if not config.manifest_db.exists():
-            return JSONResponse(status_code=503, content={
-                "error": "source_unavailable", "detail": f"manifest not found: {config.manifest_db}"})
+            return _unavailable(f"manifest not found: {config.manifest_db}")
         conn = open_ro(config.manifest_db)
         try:
-            counts = index_counts(conn)
+            data = summary_query(conn)
         finally:
             conn.close()
-        return {**counts, "ann_threshold_chunks": config.ann_threshold_chunks}
+        chunks, ann = data["chunks_total"], None
+        try:
+            ann = LanceReadOnly(config.lancedb_dir, config.lancedb_table).has_ann_index()
+        except Exception:
+            pass
+        threshold = config.ann_threshold_chunks
+        state = "needs_index" if chunks >= threshold else "approaching" if chunks >= threshold // 2 else "ok"
+        if ann:
+            state = "indexed"
+        data["ann"] = {"chunks": chunks, "threshold": threshold, "percent_of_threshold": round(100 * chunks / threshold, 1),
+                       "has_ann_index": ann, "state": state, "ticket": "HYR-02"}
+        data["ann_threshold_chunks"] = threshold
+        return data
+
+    @app.get("/api/v1/index/failures", summary="Problem files with cause category (filter, sort, paginate)")
+    def index_failures(cause: str | None = Query(None, description="one of " + ", ".join(CAUSES)),
+                       extension: str | None = None, status: str | None = None, q: str | None = Query(None, description="substring of the path"),
+                       sort: str = Query("path", pattern="^(" + "|".join(list(FAILURE_SORTS) + ["cause"]) + ")$"),
+                       desc: bool = False, limit: int = Query(50, ge=1, le=500), offset: int = Query(0, ge=0)):
+        if cause is not None and cause not in CAUSES:
+            return JSONResponse(status_code=422, content={"error": "bad_request", "detail": f"unknown cause '{cause}'"})
+        if not config.manifest_db.exists():
+            return _unavailable(f"manifest not found: {config.manifest_db}")
+        conn = open_ro(config.manifest_db)
+        try:
+            return failures_query(conn, cause=cause, extension=extension, status=status, q=q, sort=sort, desc=desc,
+                                  limit=limit, offset=offset, mask=config.mask_queries)
+        finally:
+            conn.close()
+
+    @app.get("/api/v1/index/causes", summary="Failure cause categories with labels and ticket ids")
+    def index_causes():
+        from console.failures import cause_info
+        return [cause_info(c) for c in CAUSES]
+
+    @app.get("/api/v1/maintenance/runs", summary="Maintenance run history (newest first)")
+    def maintenance_runs(limit: int = Query(30, ge=1, le=500)):
+        runs = maintenance_log.read_runs(config.logs_dir / "maintenance.log")
+        return {"total": len(runs), "items": [
+            {"started": r.started, "ended": r.ended, "result": r.result, "seconds": r.seconds,
+             "added": r.added, "changed": r.changed, "removed": r.removed, "stages": r.stages,
+             "index_ok_at": r.index_ok_at} for r in reversed(runs)][:limit]}
 
     @app.exception_handler(404)
     async def not_found(request: Request, exc):

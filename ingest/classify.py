@@ -1,7 +1,8 @@
 """Classification rules — step-1-requirements.md §4.
 
 Precedence (first match wins):
-  1. Trailing '~' or '#' in the filename -> excluded (editor backup/lock files)
+  1. Trailing '~' or '#' in the filename, or a leading '~$' (Office lock file) -> excluded
+     (editor backup/lock files)
   2. Filename matches README* or TODO* (case-insensitive) -> readme
      (TODO-named files get identical treatment to README-named files — same
      pattern-matching, same convert_to_md.sh conversion path.)
@@ -17,7 +18,7 @@ from ingest.config import Config
 
 
 def classify(filename: str, config: Config) -> str:
-    if filename.endswith(config.exclude_suffixes):
+    if filename.endswith(config.exclude_suffixes) or filename.startswith(config.exclude_prefixes):
         return "excluded"
 
     if re.match(config.readme_todo_pattern, filename, re.IGNORECASE):

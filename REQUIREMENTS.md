@@ -217,6 +217,17 @@ python scripts/make_synthetic_data.py         # demo dataset in ./demo_data (git
 ```
 
 `config/console_config.example.yaml` is tracked; copy it to `config/console_config.yaml`
-(git-ignored) for local edits. Default port 8300, loopback only. Node.js 20+ and npm 10+ (installed
-on the development machine) will be needed from the first web-UI milestone to build the React
-frontend; they are not required yet. Details: `Doc/step-9-requirements.md` §9 and `Doc/step-9-plan.md`.
+(git-ignored) for local edits. Default port 8300, loopback only.
+
+Web UI (React + TypeScript, built with Vite). Needs Node.js 20+ and npm 10+ (verified: Node 20.20.2, npm 10.8.2):
+
+```bash
+cd console/web
+npm install          # react, react-dom, vite, typescript (see package.json; package-lock.json is tracked)
+npm run build        # type-checks, then writes console/web/dist, which run_console.py serves at /
+npm run dev          # optional: Vite dev server on :5173, proxying /api to a console on :8300
+```
+
+Browser tests (optional; skipped automatically when not set up) use `pytest-playwright` and Chromium:
+`pip install pytest-playwright && python -m playwright install chromium` (about 120 MB, stored in
+`~/.cache/ms-playwright`). Details: `Doc/step-9-requirements.md` §9 and `Doc/step-9-plan.md`.

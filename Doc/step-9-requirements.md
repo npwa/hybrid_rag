@@ -72,6 +72,8 @@ Consequences:
 - FR-1.1. Show file counts by type/extension and by manifest status, with totals and
   percent succeeded/failed (the same breakdown produced by hand during the earlier
   ingest analysis: total, failed, skipped, low-confidence).
+  *As built:* outcome groups indexed / failed / needs attention / skipped; percentages use *attempted*
+  files (all files minus skipped), since skipped files are excluded by rule, not by failure.
 - FR-1.2. Show the chunk count and the embedding status split (`pending`, `embedded`,
   `deleted`).
 - FR-1.3. Show the last maintenance run: end time, result (OK/FAILED), duration, and

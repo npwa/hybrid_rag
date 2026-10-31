@@ -21,6 +21,7 @@ class Config:
     include_extensions: set[str]
     exclude_extensions: set[str]
     exclude_suffixes: tuple[str, ...]
+    exclude_prefixes: tuple[str, ...]   # e.g. '~$' Office lock files (HYR-04)
 
     readme_todo_pattern: str
     convert_to_md_script: Path
@@ -53,6 +54,7 @@ class Config:
             include_extensions={e.lower() for e in raw["include_extensions"]},
             exclude_extensions={e.lower() for e in raw["exclude_extensions"]},
             exclude_suffixes=tuple(raw["exclude_suffixes"]),
+            exclude_prefixes=tuple(raw.get("exclude_prefixes", ["~$"])),
             readme_todo_pattern=raw["readme_todo_pattern"],
             convert_to_md_script=(working_dir / raw["convert_to_md_script"]),
             pdf_text_min_chars=int(raw["pdf_text_min_chars"]),

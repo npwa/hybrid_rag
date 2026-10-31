@@ -22,12 +22,14 @@ HEALTHY = {
 }
 
 
-def run_triage(tmp_path, *args, health=None, http_code="200", listening=True, env_extra=None, stdin=""):
+def run_triage(tmp_path, *args, health=None, http_code="200", listening=True, env_extra=None, stdin="", files_total=3):
     bindir = tmp_path / "bin"
     bindir.mkdir(exist_ok=True)
     (tmp_path / "body.json").write_text(json.dumps(health if health is not None else HEALTHY))
+    (tmp_path / "summary.json").write_text(json.dumps({"files_total": files_total}))
     fake_ss = "#!/bin/sh\n" + ('echo "LISTEN 0 128 127.0.0.1:8399 0.0.0.0:*"\n' if listening else "exit 0\n")
-    fake_curl = f'#!/bin/sh\ncat {tmp_path}/body.json\nprintf "\\n{http_code}"\n'
+    fake_curl = (f'#!/bin/sh\ncase "$*" in *index/summary*) cat {tmp_path}/summary.json; exit 0;; esac\n'
+                 f'cat {tmp_path}/body.json\nprintf "\\n{http_code}"\n')
     for name, text in (("ss", fake_ss), ("curl", fake_curl)):
         f = bindir / name
         f.write_text(text)
@@ -36,8 +38,34 @@ def run_triage(tmp_path, *args, health=None, http_code="200", listening=True, en
     return subprocess.run([str(TRIAGE), *args], capture_output=True, text=True, env=env, input=stdin, timeout=90, cwd=ROOT)
 
 
+def make_manifest(tmp_path, n=3):
+    import sqlite3
+    db = tmp_path / "manifest.db"
+    c = sqlite3.connect(db)
+    c.execute("CREATE TABLE files (file_id TEXT)")
+    c.executemany("INSERT INTO files VALUES (?)", [(str(i),) for i in range(n)])
+    c.commit(); c.close()
+    return db
+
+
+def healthy_with_manifest(tmp_path, n=3):
+    h = json.loads(json.dumps(HEALTHY))
+    h["sources"][0]["path"] = str(make_manifest(tmp_path, n))
+    return h
+
+
+def test_index_summary_matches_manifest(tmp_path):                              # C5 ok
+    r = run_triage(tmp_path, "10", health=healthy_with_manifest(tmp_path, 3), files_total=3)
+    assert "[ OK ] index summary matches the manifest (3 files)" in r.stdout and r.returncode == 0
+
+
+def test_index_summary_mismatch_is_a_failure(tmp_path):                         # C5 fail
+    r = run_triage(tmp_path, "10", health=healthy_with_manifest(tmp_path, 5), files_total=3)
+    assert "[FAIL] index summary says 3 files but the manifest has 5" in r.stdout and r.returncode == 1
+
+
 def test_healthy_console_all_ok(tmp_path):                                      # T-TRI-2 (healthy)
-    r = run_triage(tmp_path, "10")
+    r = run_triage(tmp_path, "10", health=healthy_with_manifest(tmp_path))
     assert r.returncode == 0, r.stdout
     assert "[ OK ] console is listening on :8399" in r.stdout
     assert "API healthy: status=ok version=0.1.0" in r.stdout

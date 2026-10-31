@@ -284,6 +284,24 @@ if m["stale"]: line("WARN", f"index looks stale (last successful index: {m['last
 sys.exit(1 if (ro_bad or missing) else 0)
 PY
   local rc=$?; [ $rc -ne 0 ] && FAILS=$((FAILS+1))
+  # C5: the API's file count must equal an independent count straight from the manifest it reports using.
+  local mpath sbody
+  mpath=$("$PY" -c 'import json,sys; print(next(s["path"] for s in json.loads(sys.argv[1])["sources"] if s["name"]=="manifest"))' "$body" 2>/dev/null)
+  sbody=$(curl -s -m 10 "http://127.0.0.1:$CONSOLE_PORT/api/v1/index/summary")
+  "$PY" - "$mpath" "$sbody" <<'PY'
+import json, sqlite3, sys
+path, body = sys.argv[1], sys.argv[2]
+try:
+    api = json.loads(body)["files_total"]
+    n = sqlite3.connect(f"file:{path}?mode=ro", uri=True).execute("SELECT count(*) FROM files").fetchone()[0]
+except Exception as e:
+    print(f"  [WARN] could not compare the index summary with the manifest ({type(e).__name__}: {str(e)[:80]})"); sys.exit(0)
+if api == n:
+    print(f"  [ OK ] index summary matches the manifest ({n:,} files)")
+else:
+    print(f"  [FAIL] index summary says {api:,} files but the manifest has {n:,} (the console may be reading a different or stale database: {path})"); sys.exit(1)
+PY
+  [ $? -ne 0 ] && FAILS=$((FAILS+1))
   local today j; today=$(date +%F); j="logs/query_${today}.jsonl"
   if [ -s "$j" ]; then ok "structured query log is being written ($j, $(wc -l < "$j") records)"
   else warn "no structured query log yet today ($j). It is written when queries run; servers started before this feature (run_mcp_server.py, run_server.py) must be restarted to load it."; fi

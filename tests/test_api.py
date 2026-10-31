@@ -39,7 +39,7 @@ def test_index_summary_counts_equal_independent_sql(client, demo_dir):          
     assert s["files_by_status"] == dict(c.execute("SELECT status, count(*) FROM files GROUP BY 1"))
     assert s["chunks_total"] == c.execute("SELECT count(*) FROM chunks").fetchone()[0]
     assert s["chunks_by_embedding_status"] == {"embedded": s["chunks_total"]}
-    assert sum(e["count"] for e in s["files_by_extension"]) <= s["files_total"]
+    assert sum(e["total"] for e in s["files_by_type"]) == s["files_total"]
 
 
 def test_missing_manifest_gives_json_error_not_a_stack_trace(demo_config, tmp_path):   # API4
