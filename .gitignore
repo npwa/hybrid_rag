@@ -32,3 +32,17 @@ __pycache__/
 
 # --- OS cruft ---
 .DS_Store
+
+# --- Operator console (Step 9) ---
+config/console_config.yaml
+demo_data/
+console/web/node_modules/
+console/web/dist/
+.pytest_cache/
+
+# --- Editor / session junk (HYR-08) ---
+*~
+.~lock.*#
+\#*\#
+.claude.session
+openclaw-*.log

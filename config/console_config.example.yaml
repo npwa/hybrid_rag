@@ -1,0 +1,23 @@
+# Step 9 operator console configuration - see Doc/step-9-requirements.md and Doc/step-9-plan.md.
+# Copy to config/console_config.yaml for local edits (that copy is git-ignored).
+
+working_dir: ~/work/hybrid_rag     # data root; the paths below are relative to it
+demo_dir: demo_data                # used with --demo (synthetic dataset, scripts/make_synthetic_data.py)
+
+manifest_db: manifest.db           # opened read-only
+lancedb_dir: lancedb               # opened read-only
+lancedb_table: chunks
+logs_dir: logs                     # maintenance.log, query_*.log, query_*.jsonl
+agent_logs_dir: logs/agent         # local copies of OpenClaw logs (pulled from npabot-u24)
+
+# Network: loopback by default. The data is personal; binding to the LAN is a deliberate choice.
+host: 127.0.0.1
+port: 8300
+
+# Thresholds
+stale_after_hours: 36              # warn when the last successful index is older (daily cron)
+slow_query_seconds: 30             # a query slower than this is "slow" (MCP timeout is 60 s)
+ann_threshold_chunks: 200000       # above this, dense search needs an ANN index (HYR-02)
+
+# Privacy: redact query text and file paths in API responses and the UI
+mask_queries: false
