@@ -1,0 +1,29 @@
+#!/usr/bin/env python3
+"""Write a secret-free summary of ~/.openclaw/openclaw.json for the read-only 'ragr' user.
+
+Run as 'nick' on npabot-u24 (cron, e.g. every 5 minutes). Only the fields scripts/triage.sh
+needs are copied; tokens, credentials and channel settings in openclaw.json are NOT.
+Output: /tmp/openclaw/config-summary.json (inherits the directory's default ACL for ragr).
+"""
+import json, os, re, sys, tempfile
+
+TOOL = "hybrid-rag__ask_documents"
+SRC = os.path.expanduser("~/.openclaw/openclaw.json")
+OUT = "/tmp/openclaw/config-summary.json"
+
+d = json.load(open(SRC))
+srv = d.get("mcp", {}).get("servers", {}).get("hybrid-rag", {})
+url = srv.get("url", "")
+m = re.match(r"^(https?://[0-9A-Za-z.\-]+(:\d+)?/\S*)$", url)   # URL only, no headers/auth fields
+summary = {
+    "mcp_url": m.group(1) if m else None,
+    "mcp_enabled": srv.get("enabled"),
+    "tools_allow_has_tool": TOOL in d.get("tools", {}).get("allow", []),
+    "sandbox_alsoAllow_has_tool": TOOL in d.get("tools", {}).get("sandbox", {}).get("tools", {}).get("alsoAllow", []),
+    "primary_model": d.get("agents", {}).get("defaults", {}).get("model", {}).get("primary"),
+}
+fd, tmp = tempfile.mkstemp(dir=os.path.dirname(OUT))
+with os.fdopen(fd, "w") as f:
+    json.dump(summary, f, indent=1)
+os.chmod(tmp, 0o640)
+os.replace(tmp, OUT)

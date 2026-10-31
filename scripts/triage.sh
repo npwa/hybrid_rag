@@ -23,7 +23,7 @@ PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_DIR" || exit 1
 
 BOT_HOST="${BOT_HOST:-npabot-u24}"
-BOT_USER="${BOT_USER:-nick}"
+BOT_USER="${BOT_USER:-ragr}"   # read-only account; its key runs scripts/vm/ragr-fetch (see HYR-09)
 BOT_KEY="${BOT_KEY:-$HOME/.ssh/claude/id_claude_ed25519}"
 BOT_VM="${BOT_VM:-npa-u24}"
 MCP_PORT="${MCP_PORT:-8200}"
@@ -55,11 +55,33 @@ bot_ssh() {  # read-only remote command on the bot VM
       -o ConnectTimeout=5 "$BOT_USER@$BOT_HOST" "$@" 2>&1
 }
 
-bot_log() { echo '/tmp/openclaw/openclaw-$(date +%F).log'; }
+# Fixed read-only verbs served by scripts/vm/ragr-fetch on the VM (id uptime gateway logs log config).
+# BOT_WRAPPER=1 sends the bare verb (VM has scripts/vm/ragr-fetch as forced command); otherwise the
+# equivalent plain read-only commands are run in ragr's shell.
+bot_verb() {
+  if [ "${BOT_WRAPPER:-0}" = 1 ]; then bot_ssh "$@"; return; fi
+  case "$1" in
+    id)      bot_ssh id ;;
+    uptime)  bot_ssh uptime -s ;;
+    gateway) bot_ssh 'c=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 http://127.0.0.1:18789/); if [ "$c" = 200 ] && pgrep -u nick -f "openclaw.*gateway" >/dev/null; then echo active; else echo "inactive (http=$c)"; fi' ;;
+    log)     bot_ssh 'cat /tmp/openclaw/openclaw-$(date +%F).log' ;;
+    config)  bot_ssh 'cat /tmp/openclaw/config-summary.json 2>/dev/null || echo "{}"' ;;
+    *)       echo "unknown verb $1" >&2; return 2 ;;
+  esac
+}
+bot_logtext() {   # today's OpenClaw log; filtering happens locally. Fails loudly if unreadable.
+  local out rc; out=$(bot_verb log); rc=$?
+  if [ $rc -ne 0 ] || [[ "$out" == cat:* ]] || [[ "$out" == *"Permission denied"* ]]; then
+    warn "cannot read today's OpenClaw log on $BOT_HOST ($out)" >&2
+    info "Likely the ACL mask on the log was reset to --- when OpenClaw chmod'ed it: as nick run 'setfacl -m m::r /tmp/openclaw/openclaw-*.log' (see HYR-10)." >&2
+    return 1
+  fi
+  printf '%s\n' "$out"
+}
 
 mcp_listening() { ss -ltn 2>/dev/null | grep -q ":$MCP_PORT "; }
 bot_reachable() { ping -c1 -W2 "$BOT_HOST" >/dev/null 2>&1; }
-bot_login_ok()  { bot_ssh id >/dev/null; }
+bot_login_ok()  { bot_verb id >/dev/null; }
 
 start_mcp() {
   nohup "$PROJECT_DIR/run_mcp_server.py" >> "$PROJECT_DIR/logs/run_stdout.log" 2>&1 &
@@ -88,10 +110,10 @@ check_ip() {
   hdr "Desktop IP vs URL configured on $BOT_HOST"
   local mine cfg
   mine=$(hostname -I | tr ' ' '\n' | grep '^192\.168\.1\.' | head -1)
-  cfg=$(bot_ssh "grep -o 'http://[0-9.]*:$MCP_PORT/mcp' ~/.openclaw/openclaw.json | head -1")
+  cfg=$(bot_verb config | "$PY" -c "import sys,json; print(json.load(sys.stdin).get('mcp_url') or '')" 2>/dev/null)
   info "desktop LAN IP: ${mine:-unknown}   configured URL: ${cfg:-unreadable}"
   if [[ -n "$mine" && "$cfg" == *"//$mine:"* ]]; then ok "they match"
-  else bad "mismatch. Edit mcp.servers.hybrid-rag.url in ~/.openclaw/openclaw.json on $BOT_HOST (or reserve a static IP), then restart the gateway. Not automated."; fi
+  else bad "mismatch. Edit mcp.servers.hybrid-rag.url in ~nick/.openclaw/openclaw.json on $BOT_HOST (or reserve a static IP), then restart the gateway. Not automated."; fi
 }
 
 check_bot_up() {
@@ -112,7 +134,7 @@ check_ssh_login() {
   local perm; perm=$(stat -c %a "$BOT_KEY"); [ "$perm" = 600 ] && ok "key permissions 600" || {
     bad "key permissions are $perm (ssh refuses keys that are group/world readable)"
     confirm "chmod 600 $BOT_KEY?" && chmod 600 "$BOT_KEY"; }
-  local out; out=$(bot_ssh id)
+  local out; out=$(bot_verb id)
   if [[ "$out" == uid=* ]]; then ok "login works ($out)"; return 0; fi
   bad "login failed: $out"
   case "$out" in
@@ -129,31 +151,30 @@ check_ssh_login() {
 
 check_gateway() {
   hdr "OpenClaw gateway on $BOT_HOST"
-  local st; st=$(bot_ssh "systemctl --user is-active openclaw-gateway")
-  if [ "$st" = active ]; then ok "openclaw-gateway is active"
+  local st; st=$(bot_verb gateway)
+  if [ "$st" = active ]; then ok "openclaw-gateway is active (HTTP 200 on loopback, process running)"
   else bad "openclaw-gateway state: $st"
        info "restart on the VM: systemctl --user restart openclaw-gateway (change on the remote VM, not automated)"; fi
   info "signal-cli errors today:"
-  bot_ssh "grep -i 'signal' $(bot_log) | grep -i -E 'error|fail|exception' | tail -3 | cut -c1-200" | sed 's/^/           /'
+  bot_logtext | grep -i 'signal' | grep -i -E 'error|fail|exception' | tail -3 | cut -c1-200 | sed 's/^/           /'
 }
 
 check_mcp_from_bot() {
   hdr "OpenClaw's view of the MCP server"
   local fails last
-  fails=$(bot_ssh "grep -c 'failed to start server \"hybrid-rag\"' $(bot_log)")
-  last=$(bot_ssh "grep 'failed to start server \"hybrid-rag\"' $(bot_log) | tail -1 | grep -o '\"time\":\"[^\"]*\"'")
+  local logtxt; logtxt=$(bot_logtext) || return 1
+  fails=$(grep -c 'failed to start server "hybrid-rag"' <<<"$logtxt")
+  last=$(grep 'failed to start server "hybrid-rag"' <<<"$logtxt" | tail -1 | grep -o '"time":"[^"]*"')
   if [ "${fails:-0}" = 0 ]; then ok "no MCP connect failures logged today"
   else warn "$fails connect failure(s) today; last: ${last:-?}"
        info "A session started during a failure has no $TOOL. After the server is up, send /new in Signal."; fi
-  bot_ssh "python3 - <<'PY'
-import json,os
-d=json.load(open(os.path.expanduser('~/.openclaw/openclaw.json')))
-t=\"$TOOL\"
-print('mcp entry enabled:', d.get('mcp',{}).get('servers',{}).get('hybrid-rag',{}).get('enabled'))
-print('tools.allow has tool:', t in d.get('tools',{}).get('allow',[]))
-print('sandbox alsoAllow has tool:', t in d.get('tools',{}).get('sandbox',{}).get('tools',{}).get('alsoAllow',[]))
-print('primary model:', d.get('agents',{}).get('defaults',{}).get('model',{}).get('primary'))
-PY" | sed 's/^/         /'
+  bot_verb config | "$PY" -c "
+import sys,json
+d=json.load(sys.stdin)
+print('mcp entry enabled:', d.get('mcp_enabled'))
+print('tools.allow has tool:', d.get('tools_allow_has_tool'))
+print('sandbox alsoAllow has tool:', d.get('sandbox_alsoAllow_has_tool'))
+print('primary model:', d.get('primary_model'))" | sed 's/^/         /'
   info "If either 'has tool' is False, add it to that list in openclaw.json and restart the gateway (manual)."
 }
 
@@ -164,7 +185,7 @@ check_tool_called() {
   if [ -n "$q" ] && [ -s "$q" ]; then ok "latest query log has content: $q"; tail -3 "$q" | cut -c1-200 | sed 's/^/         /'
   else warn "latest query log is empty: no ask_documents call has reached the engine"; fi
   info "Gateway view (tool events, context size):"
-  bot_ssh "grep -E 'tool_execution_started|context-pressure|ask_documents' $(bot_log) | tail -4 | cut -c1-220" | sed 's/^/           /'
+  bot_logtext | grep -E 'tool_execution_started|context-pressure|ask_documents' | tail -4 | cut -c1-220 | sed 's/^/           /'
   info "If replies come back but the tool is never called: model is ignoring it or session is bloated -> /new, check agents.defaults.model.primary, trim workspace files (see Doc/step-5-requirements.md)."
 }
 
@@ -189,8 +210,8 @@ check_ollama() {
 
 check_engine() {
   hdr "Query engine end-to-end (CLI)"
-  info "running: run_query.py 'test' (same engine the MCP tool uses)"
-  if timeout 120 "$PY" run_query.py "What documents are indexed?" 2>&1 | tail -8 | cut -c1-200 | sed 's/^/           /'; then :; fi
+  info "running: run_query.py --query ... (same engine the MCP tool uses)"
+  if timeout 120 "$PY" run_query.py --query "What documents are indexed?" 2>&1 | tail -8 | cut -c1-200 | sed 's/^/           /'; then :; fi
   info "Empty/'unknown' answers: check Ollama (above), then rebuild the index: $PY run_index.py"
 }
 

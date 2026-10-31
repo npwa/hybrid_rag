@@ -1,0 +1,26 @@
+#!/bin/bash
+# Forced command for the read-only 'ragr' account on npabot-u24.
+# Install as /usr/local/bin/ragr-fetch (root:root, 755) and reference it from
+# ~ragr/.ssh/authorized_keys:  restrict,from="192.168.1.53",command="/usr/local/bin/ragr-fetch" ssh-ed25519 ...
+# Accepts one fixed verb from $SSH_ORIGINAL_COMMAND; everything else is rejected.
+# Verbs: id | uptime | gateway | logs | log [YYYY-MM-DD] | config
+set -u
+DIR=/tmp/openclaw
+GW_PORT=18789
+read -r verb arg extra <<<"${SSH_ORIGINAL_COMMAND:-}"
+[ -z "${extra:-}" ] || { echo "ragr-fetch: too many arguments" >&2; exit 2; }
+
+case "$verb" in
+  id)      id ;;
+  uptime)  uptime -s ;;
+  gateway) # gateway answers HTTP on loopback and its process exists
+           code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "http://127.0.0.1:$GW_PORT/" || true)
+           if [ "$code" = 200 ] && pgrep -u nick -f 'openclaw.*gateway' >/dev/null; then echo active
+           else echo "inactive (http=$code)"; fi ;;
+  logs)    ls -1 "$DIR" | grep -E '^openclaw-(dev-)?[0-9]{4}-[0-9]{2}-[0-9]{2}\.log$' ;;
+  log)     d="${arg:-$(date +%F)}"
+           [[ "$d" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || { echo "ragr-fetch: bad date" >&2; exit 2; }
+           cat -- "$DIR/openclaw-$d.log" ;;
+  config)  cat -- "$DIR/config-summary.json" ;;
+  *)       echo "ragr-fetch: unknown verb '${verb}'. allowed: id uptime gateway logs log config" >&2; exit 2 ;;
+esac
