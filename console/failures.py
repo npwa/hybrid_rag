@@ -73,8 +73,14 @@ def mask_path(rel_path: str) -> str:
     return f"[masked-{h}]" + (f".{ext}" if ext else "")
 
 
+_BARE_PATH = re.compile(r"(?<![\w:/.])/[\w.\-]+(?:/[\w.\-]+)*")   # /a/b/c not preceded by a word, colon or slash (so URLs survive)
+
+
 def mask_message(msg: str | None) -> str | None:
-    return None if msg is None else _PATH_IN_MSG.sub(lambda m: f"{m.group(1)}[path masked]{m.group(1)}", msg)
+    if msg is None:
+        return None
+    msg = _PATH_IN_MSG.sub(lambda m: f"{m.group(1)}[path masked]{m.group(1)}", msg)
+    return _BARE_PATH.sub("[path masked]", msg)
 
 
 @dataclass
@@ -96,3 +102,9 @@ def outcome_group(status: str) -> str:
     if status == "skipped":
         return "skipped"
     return "other"
+
+
+def mask_text(text: str) -> str:
+    """Privacy masking (FR-3.6/P3) for free text such as a question: a short stable hash, so the same question
+    still groups with itself (recurring questions stay countable) but its words are not shown."""
+    return f"[masked-{hashlib.sha1(text.strip().lower().encode()).hexdigest()[:8]}]"

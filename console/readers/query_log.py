@@ -81,10 +81,15 @@ def parse_jsonl(text: str) -> list[QueryEvent]:
 
 
 def read_day(logs_dir: Path, day: str) -> list[QueryEvent]:
-    """Events for one day (YYYY-MM-DD): the JSONL file when present, else the text log."""
+    """Events for one day (YYYY-MM-DD). The JSONL log is richer (caller, timings) but starts whenever the engine that
+    writes it was last started, so a day can have a JSONL file that covers only its end. Text-log events from before the
+    first JSONL record are added, so such a day is not cut short; from then on the JSONL is the single source."""
     j, t = Path(logs_dir) / f"query_{day}.jsonl", Path(logs_dir) / f"query_{day}.log"
-    if j.exists():
-        return parse_jsonl(j.read_text(encoding="utf-8", errors="replace"))
-    if t.exists():
-        return parse_text_log(t.read_text(encoding="utf-8", errors="replace"))
-    return []
+    text_events = parse_text_log(t.read_text(encoding="utf-8", errors="replace")) if t.exists() else []
+    if not j.exists():
+        return text_events
+    json_events = parse_jsonl(j.read_text(encoding="utf-8", errors="replace"))
+    if not json_events:
+        return text_events
+    first = min(e.ts for e in json_events)
+    return [e for e in text_events if e.ts < first] + json_events

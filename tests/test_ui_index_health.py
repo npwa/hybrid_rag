@@ -102,10 +102,11 @@ def test_api_down_shows_status_error(app: Page):
     expect(app.get_by_role("alert").first).to_contain_text("Cannot reach the console API")
 
 
-def test_other_pages_are_marked_not_built(app: Page):
-    for name, ms in (("Query analytics", "M5"),):
-        app.get_by_role("link", name=name).click()
-        expect(app.get_by_text(f"planned for milestone {ms}")).to_be_visible()
+def test_every_page_is_built(app: Page):
+    for link, heading in (("Query explorer", "Query explorer"), ("Tool-call monitor", "Tool-call monitor"), ("Query analytics", "Query analytics")):
+        app.get_by_role("link", name=link).click()
+        expect(app.get_by_role("heading", name=heading, exact=True)).to_be_visible()
+        expect(app.get_by_text("Not built yet")).to_have_count(0)
     app.get_by_role("link", name="Index health").click()
     expect(app.get_by_role("heading", name="Files", exact=True)).to_be_visible()
 

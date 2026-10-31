@@ -16,6 +16,7 @@ from console import __version__
 from console.config import ConsoleConfig
 from console.health import build_health
 from console.failures import CAUSES
+from console import queries as queries_mod
 from console.readers import agent_log, maintenance_log, query_log
 from console.readers.lance_reader import LanceReadOnly
 from console.readers.sqlite_ro import FAILURE_SORTS, failures as failures_query, open_ro, summary as summary_query
@@ -158,6 +159,15 @@ def create_app(config: ConsoleConfig, embed=None, query_config=None) -> FastAPI:
         return {"available": True, "sources": sources, "jsonl_days_with_mcp_records": sum(
                     1 for i in range(days + 1) if (config.logs_dir / f"query_{(now.date() - timedelta(days=i)).isoformat()}.jsonl").exists()),
                 **result}
+
+    @app.get("/api/v1/queries/stats", summary="Query log aggregates: volume, latency, outcome rates, recurring questions")
+    def queries_stats(days: int = Query(30, ge=1, le=365), slow_seconds: float | None = Query(None, gt=0, description="override the configured slow threshold")):
+        return queries_mod.stats(config, days, slow_seconds)
+
+    @app.get("/api/v1/queries/slow", summary="Slowest queries, queries with no relevant result, or failed queries")
+    def queries_slow(days: int = Query(30, ge=1, le=365), kind: str = Query("slow", pattern="^(slow|no_result|error)$"),
+                     limit: int = Query(20, ge=1, le=200), slow_seconds: float | None = Query(None, gt=0)):
+        return queries_mod.listing(config, days, kind, limit, slow_seconds)
 
     @app.exception_handler(404)
     async def not_found(request: Request, exc):

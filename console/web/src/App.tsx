@@ -3,7 +3,7 @@ import { api } from "./api";
 import { useLoad } from "./hooks";
 import { StatusHeader } from "./components/StatusHeader";
 import { IndexHealth } from "./pages/IndexHealth";
-import { Planned } from "./pages/Planned";
+import { QueryAnalytics } from "./pages/QueryAnalytics";
 import { ToolCalls } from "./pages/ToolCalls";
 import { QueryExplorer } from "./pages/QueryExplorer";
 
@@ -43,7 +43,7 @@ export function App() {
         {page === "index" && <IndexHealth health={health.data} />}
         {page === "explorer" && <QueryExplorer health={health.data} />}
         {page === "tools" && <ToolCalls />}
-        {page === "analytics" && <Planned title="Query analytics" milestone="M5" text="Latency over time, no-result and error rates, slow queries and recurring questions." />}
+        {page === "analytics" && <QueryAnalytics />}
       </main>
       <footer>Read-only view. {health.data?.demo ? "Showing synthetic demo data." : "Shows personal data: keep this page on this machine."}</footer>
     </div>

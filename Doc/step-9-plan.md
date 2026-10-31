@@ -410,7 +410,8 @@ milestone's docs are part of its exit criteria.
 | M2 Page 1, Index health | Done on `console` (see "M2 as built" below) |
 | M3 Page 2, Query explorer | Done on `console` (see "M3 as built" below) |
 | M4 Agent log pull and Page 4, Tool-call monitor | Done on `console` (see "M4 as built" below); real failure-case sample still missing |
-| M5 to M7 | Not started |
+| M5 Page 3, Query log analytics | Done on `console` (see "M5 as built" below) |
+| M6 to M7 | Not started |
 
 ### Findings during M0 that affect later milestones
 - The real manifest has 285 `ocr_low_confidence` files and 509 `failed` (413 "OCR produced no text", 12 permission
@@ -535,3 +536,18 @@ milestone's docs are part of its exit criteria.
   changed on the bot VM, which this read-only access cannot do, and the VM was unreachable ("No route to host") for part of
   the session. Detection is based on the documented message; the rate of turns without a tool start is the fallback.
   Real-data check used the two real log copies already on hand (1 turn: the 2026-10-30 router question, 50.2 s to tool).
+
+### M5 as built (2026-10-31)
+- **`console/queries.py`** + `GET /api/v1/queries/stats?days=&slow_seconds=` and `GET /api/v1/queries/slow?kind=slow|no_result|error&days=&limit=`.
+  Metrics and definitions are in `Doc/console-guide.md` (Page 3) and the module docstring. System prompts (`### Task:`) are counted
+  separately and excluded everywhere (plan note under FR-3.4).
+- **Reader fix found with real data:** `read_day` preferred the JSONL file over the text log, but a JSONL file starts when the
+  engine was last (re)started (2026-10-30: 23:55), which would have hidden the rest of that day. It now takes text-log events
+  from before the first JSONL record and the JSONL after it. Page 4 uses the same reader and benefits.
+- **Masking (T-PRIV-2):** `mask_text` (stable short hash, so recurrence survives); the test found that unquoted paths in error
+  messages leaked, so `mask_message` now also masks bare absolute paths (URLs are kept).
+- **UI:** `pages/QueryAnalytics.tsx`, `components/QueryCharts.tsx` (stacked bars per day, median/p95 lines with the slow line;
+  accessible SVG with titles and legends). The `Planned` placeholder component is gone: all four pages exist.
+- **Tests:** 200 pass (+16): hand-computed fixture month, independent count on the generated month, text/JSONL agreement,
+  partial-day merge, threshold override, recurring terms, lists, window and validation, empty logs, masking, 6 browser tests.
+- **Percentiles** use nearest rank, so on few points a median is one of the two middle values.

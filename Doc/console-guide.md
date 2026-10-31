@@ -84,11 +84,35 @@ structured query log existed (before 2026-10-31) the desktop side cannot tell MC
 confirmed by any query logged at that time and is not counted as an MCP request. (3) The `dev` OpenClaw instance's logs
 are ignored. Runbooks: `Doc/Runbooks/tool-never-called.md`, `Doc/Runbooks/mcp-server-down.md`.
 
-## Pages not built yet
-Query analytics (M5): the tab exists and says so.
+## Page 3: Query analytics
+What people ask, how long answers take and how often the assistant finds nothing relevant. Data: the query logs in `logs/`
+(`query_DATE.jsonl` where it exists, plus the text log `query_DATE.log` for anything before the first JSONL record of a day,
+so days from before the structured log, and a day on which the server was restarted, are still complete). Pick a period at
+the top right (last 7, 14, 30 or 90 days, counting today).
+
+**Numbers (all exclude automatic prompts):** a question starting with `### Task:` is an Open WebUI housekeeping prompt
+(chat title, follow-up suggestions). It is counted once as "automatic prompts" and left out of every rate, chart and list.
+
+| Card | Meaning |
+|---|---|
+| Questions | user questions in the period, with the caller split (`mcp` = Signal/OpenClaw, `http` = Open WebUI, `cli`; text-only days have no caller) |
+| Typical time | median total seconds of *answered and general-knowledge* questions, plus 95th percentile and slowest (errors are counted, not timed) |
+| No relevant result | share of questions the relevance gate refused (nothing close enough and general knowledge is off). Use the Query explorer on one of them to see why |
+| Errors | embedding or generation failed (Ollama down, timeout) |
+| Slow | share of timed questions at or above the slow threshold (`slow_query_seconds` in the console config, default 30 s; the MCP timeout is 60 s) |
+| Without sources | any question that ended with no source documents: refused, general knowledge or failed |
+
+Charts: questions per day by outcome, and median / 95th percentile time per day with the slow line. Tabs list the slowest
+questions, those with no relevant result and failed ones (newest or slowest first, 15 shown). "Recurring questions" groups
+identical questions (ignoring case and a final `?`) asked at least twice, with common words below them.
+`GET /api/v1/queries/stats?days=30&slow_seconds=20` can override the threshold for one request.
+
+**Privacy mode** (`mask_queries: true`): question text, file names and path-like text in error messages become short codes
+such as `[masked-3fa9c1d2]`. The same question always gets the same code, so recurrence stays visible; the common-words list
+is hidden because words would reveal the text.
 
 ## API (for scripts)
-Interactive docs at `/docs`; snapshot in `Doc/api/openapi.json`. Page 4 uses `GET /api/v1/toolcalls/summary?days=30`. Page 2 uses `POST /api/v1/explore` (body `{"query": "...", "generate": false}`). Page 1 uses `/api/v1/health`,
+Interactive docs at `/docs`; snapshot in `Doc/api/openapi.json`. Page 4 uses `GET /api/v1/toolcalls/summary?days=30`. Page 3 uses `GET /api/v1/queries/stats?days=30` and `GET /api/v1/queries/slow?kind=slow|no_result|error&days=30&limit=15`. Page 2 uses `POST /api/v1/explore` (body `{"query": "...", "generate": false}`). Page 1 uses `/api/v1/health`,
 `/api/v1/index/summary`, `/api/v1/index/failures`, `/api/v1/index/causes`, `/api/v1/maintenance/runs`.
 
 ## Privacy

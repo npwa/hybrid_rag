@@ -1,4 +1,83 @@
 {
+ "components": {
+  "schemas": {
+   "ExploreRequest": {
+    "properties": {
+     "generate": {
+      "default": false,
+      "description": "also generate an answer with the language model (uses the GPU)",
+      "title": "Generate",
+      "type": "boolean"
+     },
+     "query": {
+      "description": "the question to explore",
+      "maxLength": 1000,
+      "minLength": 1,
+      "title": "Query",
+      "type": "string"
+     }
+    },
+    "required": [
+     "query"
+    ],
+    "title": "ExploreRequest",
+    "type": "object"
+   },
+   "HTTPValidationError": {
+    "properties": {
+     "detail": {
+      "items": {
+       "$ref": "#/components/schemas/ValidationError"
+      },
+      "title": "Detail",
+      "type": "array"
+     }
+    },
+    "title": "HTTPValidationError",
+    "type": "object"
+   },
+   "ValidationError": {
+    "properties": {
+     "ctx": {
+      "title": "Context",
+      "type": "object"
+     },
+     "input": {
+      "title": "Input"
+     },
+     "loc": {
+      "items": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "integer"
+        }
+       ]
+      },
+      "title": "Location",
+      "type": "array"
+     },
+     "msg": {
+      "title": "Message",
+      "type": "string"
+     },
+     "type": {
+      "title": "Error Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "loc",
+     "msg",
+     "type"
+    ],
+    "title": "ValidationError",
+    "type": "object"
+   }
+  }
+ },
  "info": {
   "description": "Read-only observability API for the Hybrid RAG pipeline.",
   "title": "Hybrid RAG console",
@@ -6,6 +85,42 @@
  },
  "openapi": "3.1.0",
  "paths": {
+  "/api/v1/explore": {
+   "post": {
+    "operationId": "explore_query_api_v1_explore_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ExploreRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "How retrieval reached its ranking for one question (no side effects on production logs)"
+   }
+  },
   "/api/v1/health": {
    "get": {
     "operationId": "health_api_v1_health_get",
@@ -22,6 +137,162 @@
     "summary": "Status header data and read-only proof"
    }
   },
+  "/api/v1/index/causes": {
+   "get": {
+    "operationId": "index_causes_api_v1_index_causes_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Failure cause categories with labels and ticket ids"
+   }
+  },
+  "/api/v1/index/failures": {
+   "get": {
+    "operationId": "index_failures_api_v1_index_failures_get",
+    "parameters": [
+     {
+      "description": "one of ocr_no_text, ocr_below_threshold, ocr_low_confidence, permission_denied, lock_file, damaged_file, conversion_error, encrypted, empty_conversion, empty, other",
+      "in": "query",
+      "name": "cause",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "one of ocr_no_text, ocr_below_threshold, ocr_low_confidence, permission_denied, lock_file, damaged_file, conversion_error, encrypted, empty_conversion, empty, other",
+       "title": "Cause"
+      }
+     },
+     {
+      "in": "query",
+      "name": "extension",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Extension"
+      }
+     },
+     {
+      "in": "query",
+      "name": "status",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Status"
+      }
+     },
+     {
+      "description": "substring of the path",
+      "in": "query",
+      "name": "q",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "substring of the path",
+       "title": "Q"
+      }
+     },
+     {
+      "in": "query",
+      "name": "sort",
+      "required": false,
+      "schema": {
+       "default": "path",
+       "pattern": "^(path|extension|status|size|ocr_confidence|processed|cause)$",
+       "title": "Sort",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "desc",
+      "required": false,
+      "schema": {
+       "default": false,
+       "title": "Desc",
+       "type": "boolean"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 50,
+       "maximum": 500,
+       "minimum": 1,
+       "title": "Limit",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "offset",
+      "required": false,
+      "schema": {
+       "default": 0,
+       "minimum": 0,
+       "title": "Offset",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Problem files with cause category (filter, sort, paginate)"
+   }
+  },
   "/api/v1/index/summary": {
    "get": {
     "operationId": "index_summary_api_v1_index_summary_get",
@@ -35,7 +306,226 @@
       "description": "Successful Response"
      }
     },
-    "summary": "Counts of files and chunks by status"
+    "summary": "Files and chunks by status, outcome, type and failure cause"
+   }
+  },
+  "/api/v1/maintenance/runs": {
+   "get": {
+    "operationId": "maintenance_runs_api_v1_maintenance_runs_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 30,
+       "maximum": 500,
+       "minimum": 1,
+       "title": "Limit",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Maintenance run history (newest first)"
+   }
+  },
+  "/api/v1/queries/slow": {
+   "get": {
+    "operationId": "queries_slow_api_v1_queries_slow_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "days",
+      "required": false,
+      "schema": {
+       "default": 30,
+       "maximum": 365,
+       "minimum": 1,
+       "title": "Days",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "kind",
+      "required": false,
+      "schema": {
+       "default": "slow",
+       "pattern": "^(slow|no_result|error)$",
+       "title": "Kind",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 20,
+       "maximum": 200,
+       "minimum": 1,
+       "title": "Limit",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "slow_seconds",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "exclusiveMinimum": 0,
+         "type": "number"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Slow Seconds"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Slowest queries, queries with no relevant result, or failed queries"
+   }
+  },
+  "/api/v1/queries/stats": {
+   "get": {
+    "operationId": "queries_stats_api_v1_queries_stats_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "days",
+      "required": false,
+      "schema": {
+       "default": 30,
+       "maximum": 365,
+       "minimum": 1,
+       "title": "Days",
+       "type": "integer"
+      }
+     },
+     {
+      "description": "override the configured slow threshold",
+      "in": "query",
+      "name": "slow_seconds",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "exclusiveMinimum": 0,
+         "type": "number"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "override the configured slow threshold",
+       "title": "Slow Seconds"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Query log aggregates: volume, latency, outcome rates, recurring questions"
+   }
+  },
+  "/api/v1/toolcalls/summary": {
+   "get": {
+    "operationId": "toolcalls_summary_api_v1_toolcalls_summary_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "days",
+      "required": false,
+      "schema": {
+       "default": 30,
+       "maximum": 365,
+       "minimum": 1,
+       "title": "Days",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Agent tool-call activity from OpenClaw logs, reconciled with desktop MCP calls"
    }
   }
  }

@@ -83,3 +83,8 @@ ol.hits li { padding: 6px 0; border-bottom: 1px solid var(--border); } ol.hits l
 .chart { margin: 0; } .chart svg { width: 100%; height: auto; } .chart .gridline { stroke: var(--border); stroke-width: 1; }
 .chart .axis { fill: var(--muted); font-size: 11px; } .chart .legend { margin-top: 6px; }
 tr.row-bad td { background: var(--bad-bg); }
+.banner.warn { background: var(--warn-bg); color: var(--warn); }
+.tabs { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+.tab[aria-selected="true"] { background: var(--accent); color: #fff; border-color: var(--accent); }
+.nowrap { white-space: nowrap; }
+.terms { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; }

@@ -70,6 +70,20 @@ export interface ToolCalls {
   flags?: Flag[]; jsonl_days_with_mcp_records?: number;
 }
 
+export interface QStats { count: number; p50: number | null; p95: number | null; max: number | null }
+export interface QDay { day: string; queries: number; answered: number; no_relevant: number; general_knowledge: number; error: number; slow: number; latency_s: QStats; tok_per_s: number | null; format: string | null }
+export interface QueryStats {
+  available: boolean; days: number; slow_seconds: number; masked: boolean;
+  coverage: { days_with_data: number; first: string | null; last: string | null; jsonl_days: number; text_days: number };
+  totals: { queries: number; system_queries: number; by_outcome: Record<string, number>; zero_sources: number; timed: number; slow: number };
+  rates: { no_relevant: number | null; general_knowledge: number | null; error: number | null; zero_sources: number | null; slow: number | null };
+  latency_s: QStats; tok_per_s: number | null; by_caller: Record<string, number>; by_day: QDay[];
+  top_queries: { query: string; count: number; last_seen: string; no_relevant: number; errors: number }[];
+  top_terms: { term: string; queries: number }[];
+}
+export interface QueryRow { ts: string; query: string; outcome: string; caller: string | null; total_s: number | null; n_sources: number; sources: string[]; error: string | null }
+export interface QueryList { kind: string; days: number; slow_seconds: number; total: number; masked: boolean; items: QueryRow[] }
+
 export class ApiError extends Error {
   constructor(public status: number, public detail: string) { super(`${status}: ${detail}`); }
 }
@@ -105,5 +119,7 @@ export const api = {
   summary: () => get<Summary>("/index/summary"),
   failures: (p: Record<string, string | number | boolean | undefined>) => get<FailurePage>("/index/failures", p),
   toolcalls: (days: number) => get<ToolCalls>("/toolcalls/summary", { days }),
+  queryStats: (days: number) => get<QueryStats>("/queries/stats", { days }),
+  queryList: (kind: string, days: number) => get<QueryList>("/queries/slow", { kind, days, limit: 15 }),
   runs: (limit = 10) => get<{ total: number; items: Run[] }>("/maintenance/runs", { limit }),
 };
