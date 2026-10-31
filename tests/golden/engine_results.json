@@ -1,0 +1,556 @@
+[
+ {
+  "calls": [
+   [
+    "embed",
+    [
+     "what is x"
+    ]
+   ],
+   [
+    "dense",
+    [
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    20
+   ],
+   [
+    "sparse",
+    "chunks_fts",
+    "what is x",
+    20
+   ],
+   [
+    "generate",
+    "You are a helpful assistant answering questions using only the provided source excerpts below. Cite the sources you used by their [N] marker. If the answer is not contained in the excerpts, say you don't know rather than guessing.",
+    "Source excerpts:\n\n[1] Source: Docs/file0.txt\ntext 0\n\n[2] Source: Docs/file1.txt\ntext 1\n\n[3] Source: Docs/file2.txt\ntext 2\n\n[4] Source: Docs/file9.txt\ntext 9\n\n[5] Source: Docs/file3.txt\ntext 3\n\n[6] Source: Docs/file4.txt\ntext 4\n\n[7] Source: Docs/file5.txt\ntext 5\n\n[8] Source: Docs/file6.txt\ntext 6\n\nQuestion: what is x"
+   ]
+  ],
+  "overrides": {},
+  "result": {
+   "answer": "an answer",
+   "error": null,
+   "general_knowledge": false,
+   "sources": [
+    {
+     "branch": "dense+sparse",
+     "chunk_id": "c0",
+     "dense_distance": 0.5,
+     "dense_rank": 1,
+     "rel_path": "Docs/file0.txt",
+     "rrf_score": 0.03252,
+     "sparse_bm25": -20.0,
+     "sparse_rank": 2
+    },
+    {
+     "branch": "dense+sparse",
+     "chunk_id": "c1",
+     "dense_distance": 0.51,
+     "dense_rank": 2,
+     "rel_path": "Docs/file1.txt",
+     "rrf_score": 0.03252,
+     "sparse_bm25": -19.0,
+     "sparse_rank": 1
+    },
+    {
+     "branch": "dense",
+     "chunk_id": "c2",
+     "dense_distance": 0.52,
+     "dense_rank": 3,
+     "rel_path": "Docs/file2.txt",
+     "rrf_score": 0.01587,
+     "sparse_bm25": null,
+     "sparse_rank": null
+    },
+    {
+     "branch": "sparse",
+     "chunk_id": "c9",
+     "dense_distance": null,
+     "dense_rank": null,
+     "rel_path": "Docs/file9.txt",
+     "rrf_score": 0.01587,
+     "sparse_bm25": -11.0,
+     "sparse_rank": 3
+    },
+    {
+     "branch": "dense",
+     "chunk_id": "c3",
+     "dense_distance": 0.95,
+     "dense_rank": 4,
+     "rel_path": "Docs/file3.txt",
+     "rrf_score": 0.01562,
+     "sparse_bm25": null,
+     "sparse_rank": null
+    },
+    {
+     "branch": "dense",
+     "chunk_id": "c4",
+     "dense_distance": 0.95,
+     "dense_rank": 5,
+     "rel_path": "Docs/file4.txt",
+     "rrf_score": 0.01538,
+     "sparse_bm25": null,
+     "sparse_rank": null
+    },
+    {
+     "branch": "dense",
+     "chunk_id": "c5",
+     "dense_distance": 0.95,
+     "dense_rank": 6,
+     "rel_path": "Docs/file5.txt",
+     "rrf_score": 0.01515,
+     "sparse_bm25": null,
+     "sparse_rank": null
+    },
+    {
+     "branch": "dense",
+     "chunk_id": "c6",
+     "dense_distance": 0.95,
+     "dense_rank": 7,
+     "rel_path": "Docs/file6.txt",
+     "rrf_score": 0.01493,
+     "sparse_bm25": null,
+     "sparse_rank": null
+    }
+   ]
+  },
+  "scenario": "answered"
+ },
+ {
+  "calls": [
+   [
+    "embed",
+    [
+     "what is x"
+    ]
+   ],
+   [
+    "dense",
+    [
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    20
+   ]
+  ],
+  "overrides": {},
+  "result": {
+   "answer": "I couldn't find anything relevant to that in your indexed documents.",
+   "error": null,
+   "general_knowledge": false,
+   "sources": []
+  },
+  "scenario": "no_relevant"
+ },
+ {
+  "calls": [
+   [
+    "embed",
+    [
+     "what is x"
+    ]
+   ],
+   [
+    "dense",
+    [
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    20
+   ],
+   [
+    "generate",
+    "The user's personal document collection does not contain anything relevant to this question. Answer from your own general knowledge instead.",
+    "what is x"
+   ]
+  ],
+  "overrides": {},
+  "result": {
+   "answer": "General knowledge (not from your documents):\n\nan answer",
+   "error": null,
+   "general_knowledge": true,
+   "sources": []
+  },
+  "scenario": "general"
+ },
+ {
+  "calls": [
+   [
+    "embed",
+    [
+     "what is x"
+    ]
+   ]
+  ],
+  "overrides": {},
+  "result": {
+   "answer": "",
+   "error": "embedding failed: timed out",
+   "general_knowledge": false,
+   "sources": []
+  },
+  "scenario": "embed_error"
+ },
+ {
+  "calls": [
+   [
+    "embed",
+    [
+     "what is x"
+    ]
+   ],
+   [
+    "dense",
+    [
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    20
+   ],
+   [
+    "sparse",
+    "chunks_fts",
+    "what is x",
+    20
+   ],
+   [
+    "generate",
+    "You are a helpful assistant answering questions using only the provided source excerpts below. Cite the sources you used by their [N] marker. If the answer is not contained in the excerpts, say you don't know rather than guessing.",
+    "Source excerpts:\n\n[1] Source: Docs/file0.txt\ntext 0\n\n[2] Source: Docs/file1.txt\ntext 1\n\n[3] Source: Docs/file2.txt\ntext 2\n\n[4] Source: Docs/file9.txt\ntext 9\n\n[5] Source: Docs/file3.txt\ntext 3\n\n[6] Source: Docs/file4.txt\ntext 4\n\n[7] Source: Docs/file5.txt\ntext 5\n\n[8] Source: Docs/file6.txt\ntext 6\n\nQuestion: what is x"
+   ]
+  ],
+  "overrides": {},
+  "result": {
+   "answer": "",
+   "error": "generation failed: boom",
+   "general_knowledge": false,
+   "sources": []
+  },
+  "scenario": "generation_error"
+ },
+ {
+  "calls": [
+   [
+    "embed",
+    [
+     "what is x"
+    ]
+   ],
+   [
+    "dense",
+    [
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    20
+   ],
+   [
+    "sparse",
+    "chunks_fts",
+    "what is x",
+    20
+   ],
+   [
+    "generate",
+    "You are a helpful assistant answering questions using only the provided source excerpts below. Cite the sources you used by their [N] marker. If the answer is not contained in the excerpts, say you don't know rather than guessing.",
+    "Source excerpts:\n\n[1] Source: Docs/file0.txt\ntext 0\n\n[2] Source: Docs/file1.txt\ntext 1\n\n[3] Source: Docs/file2.txt\ntext 2\n\n[4] Source: Docs/file9.txt\ntext 9\n\n[5] Source: Docs/file3.txt\ntext 3\n\n[6] Source: Docs/file4.txt\ntext 4\n\n[7] Source: Docs/file5.txt\ntext 5\n\n[8] Source: Docs/file6.txt\ntext 6\n\nQuestion: what is x"
+   ]
+  ],
+  "overrides": {
+   "relevance_min_hits": 2
+  },
+  "result": {
+   "answer": "an answer",
+   "error": null,
+   "general_knowledge": false,
+   "sources": [
+    {
+     "branch": "dense+sparse",
+     "chunk_id": "c0",
+     "dense_distance": 0.5,
+     "dense_rank": 1,
+     "rel_path": "Docs/file0.txt",
+     "rrf_score": 0.03252,
+     "sparse_bm25": -20.0,
+     "sparse_rank": 2
+    },
+    {
+     "branch": "dense+sparse",
+     "chunk_id": "c1",
+     "dense_distance": 0.51,
+     "dense_rank": 2,
+     "rel_path": "Docs/file1.txt",
+     "rrf_score": 0.03252,
+     "sparse_bm25": -19.0,
+     "sparse_rank": 1
+    },
+    {
+     "branch": "dense",
+     "chunk_id": "c2",
+     "dense_distance": 0.52,
+     "dense_rank": 3,
+     "rel_path": "Docs/file2.txt",
+     "rrf_score": 0.01587,
+     "sparse_bm25": null,
+     "sparse_rank": null
+    },
+    {
+     "branch": "sparse",
+     "chunk_id": "c9",
+     "dense_distance": null,
+     "dense_rank": null,
+     "rel_path": "Docs/file9.txt",
+     "rrf_score": 0.01587,
+     "sparse_bm25": -11.0,
+     "sparse_rank": 3
+    },
+    {
+     "branch": "dense",
+     "chunk_id": "c3",
+     "dense_distance": 0.95,
+     "dense_rank": 4,
+     "rel_path": "Docs/file3.txt",
+     "rrf_score": 0.01562,
+     "sparse_bm25": null,
+     "sparse_rank": null
+    },
+    {
+     "branch": "dense",
+     "chunk_id": "c4",
+     "dense_distance": 0.95,
+     "dense_rank": 5,
+     "rel_path": "Docs/file4.txt",
+     "rrf_score": 0.01538,
+     "sparse_bm25": null,
+     "sparse_rank": null
+    },
+    {
+     "branch": "dense",
+     "chunk_id": "c5",
+     "dense_distance": 0.95,
+     "dense_rank": 6,
+     "rel_path": "Docs/file5.txt",
+     "rrf_score": 0.01515,
+     "sparse_bm25": null,
+     "sparse_rank": null
+    },
+    {
+     "branch": "dense",
+     "chunk_id": "c6",
+     "dense_distance": 0.95,
+     "dense_rank": 7,
+     "rel_path": "Docs/file6.txt",
+     "rrf_score": 0.01493,
+     "sparse_bm25": null,
+     "sparse_rank": null
+    }
+   ]
+  },
+  "scenario": "answered"
+ },
+ {
+  "calls": [
+   [
+    "embed",
+    [
+     "what is x"
+    ]
+   ],
+   [
+    "dense",
+    [
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    20
+   ],
+   [
+    "sparse",
+    "chunks_fts",
+    "what is x",
+    20
+   ],
+   [
+    "generate",
+    "You are a helpful assistant answering questions using only the provided source excerpts below. Cite the sources you used by their [N] marker. If the answer is not contained in the excerpts, say you don't know rather than guessing.",
+    "Source excerpts:\n\n[1] Source: Docs/file0.txt\ntext 0\n\n[2] Source: Docs/file1.txt\ntext 1\n\n[3] Source: Docs/file2.txt\ntext 2\n\nQuestion: what is x"
+   ]
+  ],
+  "overrides": {
+   "top_k_fused": 3
+  },
+  "result": {
+   "answer": "an answer",
+   "error": null,
+   "general_knowledge": false,
+   "sources": [
+    {
+     "branch": "dense+sparse",
+     "chunk_id": "c0",
+     "dense_distance": 0.5,
+     "dense_rank": 1,
+     "rel_path": "Docs/file0.txt",
+     "rrf_score": 0.03252,
+     "sparse_bm25": -20.0,
+     "sparse_rank": 2
+    },
+    {
+     "branch": "dense+sparse",
+     "chunk_id": "c1",
+     "dense_distance": 0.51,
+     "dense_rank": 2,
+     "rel_path": "Docs/file1.txt",
+     "rrf_score": 0.03252,
+     "sparse_bm25": -19.0,
+     "sparse_rank": 1
+    },
+    {
+     "branch": "dense",
+     "chunk_id": "c2",
+     "dense_distance": 0.52,
+     "dense_rank": 3,
+     "rel_path": "Docs/file2.txt",
+     "rrf_score": 0.01587,
+     "sparse_bm25": null,
+     "sparse_rank": null
+    }
+   ]
+  },
+  "scenario": "answered"
+ },
+ {
+  "calls": [
+   [
+    "embed",
+    [
+     "what is x"
+    ]
+   ],
+   [
+    "dense",
+    [
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    20
+   ],
+   [
+    "sparse",
+    "chunks_fts",
+    "what is x",
+    20
+   ],
+   [
+    "generate",
+    "You are a helpful assistant answering questions using only the provided source excerpts below. Cite the sources you used by their [N] marker. If the answer is not contained in the excerpts, say you don't know rather than guessing.",
+    "Source excerpts:\n\n[1] Source: Docs/file0.txt\ntext 0\n\n[2] Source: Docs/file1.txt\ntext 1\n\n[3] Source: Docs/file2.txt\ntext 2\n\n[4] Source: Docs/file9.txt\ntext 9\n\n[5] Source: Docs/file3.txt\ntext 3\n\n[6] Source: Docs/file4.txt\ntext 4\n\n[7] Source: Docs/file5.txt\ntext 5\n\n[8] Source: Docs/file6.txt\ntext 6\n\nQuestion: what is x"
+   ]
+  ],
+  "overrides": {
+   "rrf_k": 10
+  },
+  "result": {
+   "answer": "an answer",
+   "error": null,
+   "general_knowledge": false,
+   "sources": [
+    {
+     "branch": "dense+sparse",
+     "chunk_id": "c0",
+     "dense_distance": 0.5,
+     "dense_rank": 1,
+     "rel_path": "Docs/file0.txt",
+     "rrf_score": 0.17424,
+     "sparse_bm25": -20.0,
+     "sparse_rank": 2
+    },
+    {
+     "branch": "dense+sparse",
+     "chunk_id": "c1",
+     "dense_distance": 0.51,
+     "dense_rank": 2,
+     "rel_path": "Docs/file1.txt",
+     "rrf_score": 0.17424,
+     "sparse_bm25": -19.0,
+     "sparse_rank": 1
+    },
+    {
+     "branch": "dense",
+     "chunk_id": "c2",
+     "dense_distance": 0.52,
+     "dense_rank": 3,
+     "rel_path": "Docs/file2.txt",
+     "rrf_score": 0.07692,
+     "sparse_bm25": null,
+     "sparse_rank": null
+    },
+    {
+     "branch": "sparse",
+     "chunk_id": "c9",
+     "dense_distance": null,
+     "dense_rank": null,
+     "rel_path": "Docs/file9.txt",
+     "rrf_score": 0.07692,
+     "sparse_bm25": -11.0,
+     "sparse_rank": 3
+    },
+    {
+     "branch": "dense",
+     "chunk_id": "c3",
+     "dense_distance": 0.95,
+     "dense_rank": 4,
+     "rel_path": "Docs/file3.txt",
+     "rrf_score": 0.07143,
+     "sparse_bm25": null,
+     "sparse_rank": null
+    },
+    {
+     "branch": "dense",
+     "chunk_id": "c4",
+     "dense_distance": 0.95,
+     "dense_rank": 5,
+     "rel_path": "Docs/file4.txt",
+     "rrf_score": 0.06667,
+     "sparse_bm25": null,
+     "sparse_rank": null
+    },
+    {
+     "branch": "dense",
+     "chunk_id": "c5",
+     "dense_distance": 0.95,
+     "dense_rank": 6,
+     "rel_path": "Docs/file5.txt",
+     "rrf_score": 0.0625,
+     "sparse_bm25": null,
+     "sparse_rank": null
+    },
+    {
+     "branch": "dense",
+     "chunk_id": "c6",
+     "dense_distance": 0.95,
+     "dense_rank": 7,
+     "rel_path": "Docs/file6.txt",
+     "rrf_score": 0.05882,
+     "sparse_bm25": null,
+     "sparse_rank": null
+    }
+   ]
+  },
+  "scenario": "answered"
+ }
+]

@@ -10,6 +10,11 @@ import yaml
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
+def _proj(p) -> Path:
+    p = Path(p).expanduser()
+    return p if p.is_absolute() else PROJECT_ROOT / p
+
+
 @dataclasses.dataclass
 class ConsoleConfig:
     working_dir: Path
@@ -27,6 +32,7 @@ class ConsoleConfig:
     mcp_port: int           # MCP server port probed by the status header
     ollama_url: str
     static_dir: Path        # built web UI (console/web/dist), relative to the project root
+    query_config: Path      # config/query_config.yaml: the explorer reuses the engine's retrieval settings
     demo: bool
 
     @classmethod
@@ -59,5 +65,6 @@ class ConsoleConfig:
             mcp_port=int(raw.get("mcp_port", 8200)),
             ollama_url=str(raw.get("ollama_url", "http://localhost:11434")).rstrip("/"),
             static_dir=Path(raw.get("static_dir", PROJECT_ROOT / "console" / "web" / "dist")),
+            query_config=_proj(raw.get("query_config", "config/query_config.yaml")),
             demo=demo,
         )

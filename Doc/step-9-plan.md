@@ -408,7 +408,8 @@ milestone's docs are part of its exit criteria.
 | M0 Scaffolding and synthetic data | Done on `console` (see "As built" in the requirements doc when written): package, config, pytest, `.gitignore`, generator, 12 tests |
 | M1 Backend foundation and structured query log | Done on `console` (see "M1 as built" below) |
 | M2 Page 1, Index health | Done on `console` (see "M2 as built" below) |
-| M3 to M7 | Not started |
+| M3 Page 2, Query explorer | Done on `console` (see "M3 as built" below) |
+| M4 to M7 | Not started |
 
 ### Findings during M0 that affect later milestones
 - The real manifest has 285 `ocr_low_confidence` files and 509 `failed` (413 "OCR produced no text", 12 permission
@@ -476,3 +477,31 @@ milestone's docs are part of its exit criteria.
 - **Not done (by design):** nothing is written to the manifest, so the 3 existing lock-file rows stay `failed` until
   the next ingest run reclassifies them as `skipped`.
 - **Changes to existing production code:** `ingest/classify.py`, `ingest/config.py` (HYR-04 only).
+
+### M3 as built (2026-10-31)
+- **Engine refactor (decision D5):** `query/engine.py` gained `Retrieval` and `retrieve(query, config, *, full=False,
+  embed=None)`: embed, dense search, relevance gate, then keyword search and RRF fusion. `answer_query()` now calls it and
+  keeps its previous behavior exactly: with `full=False` retrieval stops after a failed gate, so no keyword search runs
+  for irrelevant queries as before. **Proof (T-ENG-1):** `tests/golden/engine_results.json` was captured from the engine
+  *before* the change (8 scenarios: results plus every dependency call and both prompts); `tests/test_engine_golden.py`
+  passes after it, and the text-log golden tests from M1 still pass.
+- **Explorer backend:** `console/explorer.py`, `POST /api/v1/explore`. Reuses `retrieve(full=True)`; builds the engine's
+  `QueryConfig` from `config/query_config.yaml` (key `query_config`); gate explanation with what-if for 1 to 5 required hits;
+  optional generation that mirrors production's branches but never calls `answer_query`; one exploration at a time (429
+  when busy); 502 on embedding failure, 503 when the index is missing, 422 on bad input; excerpts capped at 320 chars; no
+  vectors in responses; masking of paths and excerpts. Explorer runs are logged only to `logs/explorer/explore_*.jsonl`
+  (FR-2.5). The engine is imported lazily, so the console process stays light until the explorer is used.
+- **Demo:** `console/demo_embed.py` (hashed bag-of-words embedder) now produces both the demo chunk vectors and the demo
+  query vectors, so the demo runs the real LanceDB search, gate and fusion without Ollama (demo threshold 1.35).
+- **Frontend:** `pages/QueryExplorer.tsx`, `components/GateCard.tsx`, `components/HitLists.tsx`.
+- **Tests:** 144 pass. New: 8 golden engine cases, 14 explorer backend tests (fused ranking equals production's
+  `fusion detail` for 20 stored questions; leg labels incl. a crafted keyword-only row; the `min_hits` refusal explained and
+  confirmed against production; production logs byte-identical after explorer runs; generation toggle; errors; masking; data
+  directory unchanged), 7 browser tests.
+- **Real-data check:** fused ranking for a live question (Ollama embeddings) is identical to the production JSONL record
+  of the same question (8 rows, branch and rrf score equal); explorer total 77 ms (embed 42 ms, dense 29 ms, keyword 3 ms);
+  `manifest.db` checksum unchanged.
+- **Deferred:** the plan listed "triage engine check reuses `retrieve()`". Not done on purpose: menu 6 should keep testing
+  the full path including generation, which the explorer does not.
+- **Merge note:** `query/engine.py` now differs from `alternate` in more places (function split). Resolve by keeping
+  `retrieve()` and re-applying alternate's metrics lines in `answer_query()`.

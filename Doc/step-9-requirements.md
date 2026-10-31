@@ -101,7 +101,8 @@ Consequences:
   earlier `min_hits=2` case is explained.
 - FR-2.4. Optional "also generate answer" toggle that runs the normal engine path and
   shows the answer plus timing (embed, retrieval, generation).
-- FR-2.5. Explorer runs must not alter system state. They may be logged to a separate
+- FR-2.5. (*As built:* explorer runs are written only to `logs/explorer/explore_*.jsonl`, the one place the console writes;
+  an unwritable directory is tolerated.) Explorer runs must not alter system state. They may be logged to a separate
   explorer log, never to the production `query_*.log`, so analytics (page 3) are not
   polluted.
 - FR-2.6. Reuse the existing query engine/fusion/dense modules rather than

@@ -137,10 +137,10 @@ retrieval reached an answer, query-log analytics and OpenClaw tool-call behavior
 changes the index, the manifest or any server's behavior and runs as its own process.
 Requirements: `Doc/step-9-requirements.md`; plan and status: `Doc/step-9-plan.md`.
 
-Status: **milestone M2**. The **Index health** page works: files by outcome, type and failure cause,
+Status: **milestone M3**. The **Query explorer** works: type a question and see the dense and keyword hits, the fused
+ranking, the relevance-gate verdict and timings (nothing is written to the production query logs). The **Index health** page works: files by outcome, type and failure cause,
 maintenance history, index staleness, the ANN-index gauge and a filterable list of problem files, each linked to a
-ticket and a runbook. The other three pages (query explorer, tool-call monitor, query analytics) are tabs that say
-"not built yet". User guide: `Doc/console-guide.md`. API docs at `/docs` while it runs.
+ticket and a runbook. The other two pages (tool-call monitor, query analytics) are tabs that say "not built yet". User guide: `Doc/console-guide.md`. API docs at `/docs` while it runs.
 
 ```bash
 pip install -r requirements-dev.txt                  # adds pytest, httpx for the console tests

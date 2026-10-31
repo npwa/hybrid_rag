@@ -4,6 +4,7 @@ import { useLoad } from "./hooks";
 import { StatusHeader } from "./components/StatusHeader";
 import { IndexHealth } from "./pages/IndexHealth";
 import { Planned } from "./pages/Planned";
+import { QueryExplorer } from "./pages/QueryExplorer";
 
 const PAGES = [
   { id: "index", label: "Index health" },
@@ -39,7 +40,7 @@ export function App() {
       <StatusHeader health={health.data} error={health.error} />
       <main>
         {page === "index" && <IndexHealth health={health.data} />}
-        {page === "explorer" && <Planned title="Query explorer" milestone="M3" text="Type a question and see the dense and keyword hits side by side, the fused ranking, and which relevance gate passed or failed." />}
+        {page === "explorer" && <QueryExplorer health={health.data} />}
         {page === "tools" && <Planned title="Tool-call monitor" milestone="M4" text="How often the agent model makes a real structured tool call, time to tool, and sessions that started while the MCP server was down." />}
         {page === "analytics" && <Planned title="Query analytics" milestone="M5" text="Latency over time, no-result and error rates, slow queries and recurring questions." />}
       </main>

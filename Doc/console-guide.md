@@ -36,13 +36,38 @@ below. Each cause id has a section in `Doc/Runbooks/index-failure-causes.md`.
 **Problem files.** Filter by cause, type or part of the path; click a column header to sort; 25 rows per page.
 Hover a row for the full error text. This includes the low-confidence-OCR files (FR-1.5) with their confidence.
 
+## Page 2: Query explorer
+Type a question and press Explore to see how retrieval reaches its ranking. Nothing is generated unless you tick
+*Also generate an answer* (real data only; it uses the GPU like a normal answer). Explorer runs are **not** written to
+the production query logs: they go to `logs/explorer/explore_YYYY-MM-DD.jsonl`, so the analytics page is not distorted.
+
+**Relevance gate (top card).** The engine first checks the raw dense distances: at least *required hits* of the top
+results must be closer than the *distance threshold*, otherwise production does not call the language model. The card
+says passed or not passed, why, what production would do, and a what-if row (would the gate pass if it required 1, 2, 3…
+hits). This is the view that explains a refusal like the earlier `min_hits=2` case: a single genuine match is
+rejected if two are required.
+
+**Three lists.** *Dense (meaning)*: the 20 nearest chunks by embedding distance (smaller is closer); a filled dot means
+under the threshold. *Keyword (BM25)*: the 20 best word-match chunks (more negative is better). *Fused ranking (RRF)*:
+the 8 chunks that would be given to the language model, in order, with which leg(s) found each ("both", "dense only",
+"keyword only") and its rank and score in each leg. Green rows in the two leg lists are the ones that made the fused
+list. Open *excerpt* to read the chunk text. The same file can appear several times: lists are per chunk, not per file.
+
+**Timings.** Embedding, dense search, keyword search, fusion and total, in milliseconds (plus generation when asked).
+
+**Demo mode** uses a toy embedder (hashed words, `console/demo_embed.py`) with its own threshold, so distances there
+are not comparable with real ones; no language model is connected, so generation is unavailable.
+
+**Limits.** One exploration at a time (a second gets a "busy" message); questions up to 1,000 characters.
+
 ## Pages not built yet
-Query explorer (M3), Tool-call monitor (M4), Query analytics (M5): the tabs exist and say so.
+Tool-call monitor (M4) and Query analytics (M5): the tabs exist and say so.
 
 ## API (for scripts)
-Interactive docs at `/docs`; snapshot in `Doc/api/openapi.json`. Page 1 uses `/api/v1/health`,
+Interactive docs at `/docs`; snapshot in `Doc/api/openapi.json`. Page 2 uses `POST /api/v1/explore` (body `{"query": "...", "generate": false}`). Page 1 uses `/api/v1/health`,
 `/api/v1/index/summary`, `/api/v1/index/failures`, `/api/v1/index/causes`, `/api/v1/maintenance/runs`.
 
 ## Privacy
-Set `mask_queries: true` in the console config to replace file names in the problem-file list by short hashes (the
-extension is kept) and to hide paths inside error messages. The numbers stay the same.
+Set `mask_queries: true` in the console config to replace file names by short hashes (the extension is kept), to hide paths
+inside error messages, and to replace chunk excerpts in the explorer by `[masked]`. The numbers stay the same. The explorer log
+(`logs/explorer/`) contains the questions you typed: it is personal data like the production query logs.

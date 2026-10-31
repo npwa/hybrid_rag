@@ -3,7 +3,7 @@
 
 Output (default ./demo_data, git-ignored) mirrors the real working directory layout:
   manifest.db            files + chunks + FTS5 (same schema as ingest/manifest.py)
-  lancedb/               table "chunks" with random 768-d vectors (NOT semantic)
+  lancedb/               table "chunks" with 768-d hashed bag-of-words vectors (console/demo_embed.py; NOT semantic)
   logs/maintenance.log   history with an old FAILED run followed by OK runs
   logs/query_*.log       text query logs in the real format
   logs/agent/            OpenClaw-style JSON-lines logs + config-summary.json
@@ -143,13 +143,8 @@ def make_manifest(out: Path, rng: random.Random) -> list[dict]:
 def make_vectors(out: Path, rows: list[dict], rng: random.Random) -> None:
     import lancedb
     import pyarrow as pa
-    dim = 768
-    vec_rng = random.Random(rng.random())
-    data = []
-    for r in rows:
-        v = [vec_rng.gauss(0, 1) for _ in range(dim)]
-        norm = sum(x * x for x in v) ** 0.5
-        data.append({**r, "vector": [x / norm for x in v]})
+    from console.demo_embed import DIM as dim, embed_text      # words -> vectors, so demo queries find demo chunks
+    data = [{**r, "vector": embed_text(r["text"])} for r in rows]
     schema = pa.schema([
         ("chunk_id", pa.string()), ("vector", pa.list_(pa.float32(), dim)), ("file_id", pa.string()),
         ("rel_path", pa.string()), ("category", pa.string()), ("extension", pa.string()), ("tags", pa.string()),

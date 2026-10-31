@@ -37,25 +37,66 @@ class QueryResult:
     general_knowledge: bool = False
 
 
-def answer_query(query: str, config: QueryConfig, caller: str = "unknown") -> QueryResult:
-    """`caller` (cli | http | mcp) only labels the structured JSONL log; it never affects results."""
-    start = time.monotonic()
+@dataclass
+class Retrieval:
+    """Everything retrieval produced, before any generation. Shared by answer_query() (production) and the
+    operator console's query explorer, so both always see the same ranking (Doc/step-9-requirements.md FR-2.6)."""
+    vector: list[float]
+    dense: list[dict]
+    relevant: bool                  # the relevance gate (query/relevance.py) on the raw dense distances
+    hits: int                       # dense results under the distance threshold
+    sparse: list[dict] | None       # None when skipped (not relevant and full=False)
+    fused: list[dict] | None        # None when skipped
+    timings: dict = field(default_factory=dict)   # embed_s, dense_s, sparse_s, fuse_s (seconds)
 
-    try:
-        vector = embed_batch([query], config)[0]
-    except EmbeddingError as e:
-        log.warning("QUERY_EMBED_FAILED %r: %s", query, e)
-        log_query_event(config, query, caller, "error", error=f"embedding failed: {e}", total_s=time.monotonic() - start)
-        return QueryResult(answer="", error=f"embedding failed: {e}")
-    embed_s = time.monotonic() - start
 
+def retrieve(query: str, config: QueryConfig, *, full: bool = False, embed=None) -> Retrieval:
+    """Embed, dense search, relevance gate, then (if relevant, or `full`) keyword search and RRF fusion.
+
+    Production passes full=False, so a query the corpus has nothing on stops after the gate exactly as before
+    (no keyword search). The explorer passes full=True to show every stage. `embed` replaces the embedding call
+    (demo mode and tests). Raises EmbeddingError if embedding fails."""
+    t0 = time.monotonic()
+    vector = (embed or embed_batch)([query], config)[0]
+    t1 = time.monotonic()
     tbl = open_table(config)
     dense_results = dense_search(tbl, vector, config.top_n_dense)
+    t2 = time.monotonic()
 
     # Relevance gate (query/relevance.py): checked against the *raw* dense distances,
     # before fusion — RRF's fused score always looks normal even when nothing in the
     # corpus is actually relevant, since it's rank-based, not magnitude-based.
     relevant = has_relevant_results(dense_results, config.relevance_distance_threshold, config.relevance_min_hits)
+    hits = sum(1 for r in dense_results if r["_distance"] < config.relevance_distance_threshold)
+    timings = {"embed_s": t1 - t0, "dense_s": t2 - t1}
+    if not relevant and not full:
+        return Retrieval(vector, dense_results, relevant, hits, None, None, timings)
+
+    conn = sqlite3.connect(f"file:{config.manifest_db}?mode=ro", uri=True)
+    conn.row_factory = sqlite3.Row
+    try:
+        sparse_results = sparse_search(conn, config.fts5_table, query, config.top_n_sparse)
+    finally:
+        conn.close()
+    t3 = time.monotonic()
+    fused = rrf_fuse([dense_results, sparse_results], k=config.rrf_k, top_k=config.top_k_fused,
+                     list_names=["dense", "sparse"])
+    timings.update(sparse_s=t3 - t2, fuse_s=time.monotonic() - t3)
+    return Retrieval(vector, dense_results, relevant, hits, sparse_results, fused, timings)
+
+
+def answer_query(query: str, config: QueryConfig, caller: str = "unknown") -> QueryResult:
+    """`caller` (cli | http | mcp) only labels the structured JSONL log; it never affects results."""
+    start = time.monotonic()
+
+    try:
+        r = retrieve(query, config)
+    except EmbeddingError as e:
+        log.warning("QUERY_EMBED_FAILED %r: %s", query, e)
+        log_query_event(config, query, caller, "error", error=f"embedding failed: {e}", total_s=time.monotonic() - start)
+        return QueryResult(answer="", error=f"embedding failed: {e}")
+    embed_s = r.timings["embed_s"]
+    relevant = r.relevant
 
     if not relevant and not config.allow_general_knowledge_fallback:
         # Default behavior: strict document-grounding, no LLM call needed since there's
@@ -79,15 +120,7 @@ def answer_query(query: str, config: QueryConfig, caller: str = "unknown") -> Qu
         log_query_event(config, query, caller, "general_knowledge", total_s=elapsed, embed_s=embed_s)
         return QueryResult(answer=answer, general_knowledge=True)
 
-    conn = sqlite3.connect(f"file:{config.manifest_db}?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
-    try:
-        sparse_results = sparse_search(conn, config.fts5_table, query, config.top_n_sparse)
-    finally:
-        conn.close()
-
-    fused = rrf_fuse([dense_results, sparse_results], k=config.rrf_k, top_k=config.top_k_fused,
-                      list_names=["dense", "sparse"])
+    fused = r.fused
 
     retrieved_at = time.monotonic()
     system, user = build_prompt(query, fused)

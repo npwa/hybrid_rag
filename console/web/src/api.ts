@@ -33,6 +33,24 @@ export interface Run {
   added: number | null; changed: number | null; removed: number | null; stages: Record<string, string>; index_ok_at: string | null;
 }
 
+export interface DenseHit { rank: number; chunk_id: string; rel_path: string; distance: number; passes_threshold: boolean; in_fused: boolean; also_sparse: boolean; excerpt: string }
+export interface SparseHit { rank: number; chunk_id: string; rel_path: string; bm25: number; in_fused: boolean; also_dense: boolean; excerpt: string }
+export interface FusedHit {
+  rank: number; chunk_id: string; rel_path: string; rrf_score: number; branch: string;
+  dense_rank: number | null; dense_distance: number | null; sparse_rank: number | null; sparse_bm25: number | null; excerpt: string;
+}
+export interface Gate {
+  relevant: boolean; hits: number; required_hits: number; distance_threshold: number; nearest_distance: number | null;
+  production_outcome: "answered" | "no_relevant" | "general_knowledge"; explanation: string;
+  would_pass_with_min_hits: Record<string, boolean>;
+}
+export interface Exploration {
+  query: string; demo: boolean; generated: boolean;
+  settings: { top_n_dense: number; top_n_sparse: number; rrf_k: number; top_k_fused: number; distance_threshold: number; min_hits: number; allow_general_knowledge: boolean };
+  gate: Gate; dense: DenseHit[]; sparse: SparseHit[]; fused: FusedHit[];
+  timings: Record<string, number>; answer: string | null; generation_error: string | null;
+}
+
 export class ApiError extends Error {
   constructor(public status: number, public detail: string) { super(`${status}: ${detail}`); }
 }
@@ -49,7 +67,21 @@ async function get<T>(path: string, params?: Record<string, string | number | bo
   return res.json() as Promise<T>;
 }
 
+async function post<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`/api/v1${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const j = await res.json();
+      detail = typeof j.detail === "string" ? j.detail : Array.isArray(j.detail) ? j.detail.map((d: { msg?: string }) => d.msg).join("; ") : j.error ?? detail;
+    } catch { /* not JSON */ }
+    throw new ApiError(res.status, detail);
+  }
+  return res.json() as Promise<T>;
+}
+
 export const api = {
+  explore: (query: string, generate: boolean) => post<Exploration>("/explore", { query, generate }),
   health: () => get<Health>("/health"),
   summary: () => get<Summary>("/index/summary"),
   failures: (p: Record<string, string | number | boolean | undefined>) => get<FailurePage>("/index/failures", p),

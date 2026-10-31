@@ -6,6 +6,7 @@ import logging
 import threading
 
 from fastapi import FastAPI, Query, Request
+from pydantic import BaseModel, Field
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -25,7 +26,13 @@ _PLACEHOLDER = """<!doctype html><meta charset="utf-8"><title>Hybrid RAG console
 <p>See <a href="/docs">/docs</a> for the API and <a href="/api/v1/health">/api/v1/health</a> for status.</p></body>"""
 
 
-def create_app(config: ConsoleConfig) -> FastAPI:
+class ExploreRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=1000, description="the question to explore")
+    generate: bool = Field(False, description="also generate an answer with the language model (uses the GPU)")
+
+
+def create_app(config: ConsoleConfig, embed=None, query_config=None) -> FastAPI:
+    """`embed` / `query_config` are test hooks; the explorer builds both itself otherwise."""
     def _warm_up():   # importing lancedb takes ~0.9 s; do it before the first request needs it (API3: under 1 s)
         try:
             import lancedb  # noqa: F401
@@ -99,6 +106,24 @@ def create_app(config: ConsoleConfig) -> FastAPI:
             {"started": r.started, "ended": r.ended, "result": r.result, "seconds": r.seconds,
              "added": r.added, "changed": r.changed, "removed": r.removed, "stages": r.stages,
              "index_ok_at": r.index_ok_at} for r in reversed(runs)][:limit]}
+
+    @app.post("/api/v1/explore", summary="How retrieval reached its ranking for one question (no side effects on production logs)")
+    def explore_query(req: ExploreRequest):
+        from console import explorer          # lazy: loads the query engine only when the explorer is used
+        query = req.query.strip()
+        if not query:
+            return JSONResponse(status_code=422, content={"error": "bad_request", "detail": "query is empty"})
+        if not config.demo and not (config.manifest_db.exists() and config.lancedb_dir.exists()):
+            return _unavailable("manifest or vector index not found")
+        try:
+            return explorer.explore(config, query, generate=req.generate, embed=embed, qcfg=query_config)
+        except explorer.Busy:
+            return JSONResponse(status_code=429, content={"error": "busy", "detail": "another exploration is running; try again"})
+        except Exception as e:
+            from indexing.embedder import EmbeddingError
+            if isinstance(e, EmbeddingError):
+                return JSONResponse(status_code=502, content={"error": "embedding_failed", "detail": str(e)})
+            raise
 
     @app.exception_handler(404)
     async def not_found(request: Request, exc):
