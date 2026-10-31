@@ -203,3 +203,20 @@ new/changed data (`Doc/step-1-requirements.md` §8, `Doc/step-3-requirements.md`
 `Doc/step-4-requirements.md` §4). `run_query.py`/`run_server.py`/`run_mcp_server.py` are
 read-only against the indexes — nothing to re-run, just start whichever server you want
 running.
+
+## 8. Operator console (Step 9, in progress)
+
+Runtime needs nothing beyond `requirements.txt` (FastAPI and uvicorn are already there).
+Development and tests add `requirements-dev.txt` (`pytest`, `httpx`):
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest                              # unit/contract/read-only/triage tests; no Ollama, no real data
+python scripts/make_synthetic_data.py         # demo dataset in ./demo_data (git-ignored)
+./run_console.py --demo                       # or: ./run_console.py --config config/console_config.yaml
+```
+
+`config/console_config.example.yaml` is tracked; copy it to `config/console_config.yaml`
+(git-ignored) for local edits. Default port 8300, loopback only. Node.js 20+ and npm 10+ (installed
+on the development machine) will be needed from the first web-UI milestone to build the React
+frontend; they are not required yet. Details: `Doc/step-9-requirements.md` §9 and `Doc/step-9-plan.md`.

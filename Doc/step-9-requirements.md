@@ -36,6 +36,8 @@ Java, ServiceNow or identity management, and must not imply it does.
   affect the Signal path.
 - C2. **Read-only data access.**
   - `manifest.db` opened with SQLite `mode=ro` (URI) and `query_only` set.
+    (SQLite WAL side files `manifest.db-wal`/`-shm` may be created or touched by any reader of a WAL
+    database; they hold no data, and the main database file is never modified.)
   - LanceDB opened read-only (no `add`/`delete`/index creation).
   - Log files opened for read only.
 - C3. **No new datastore.** Aggregations are computed from existing sources (manifest,

@@ -406,7 +406,8 @@ milestone's docs are part of its exit criteria.
 | Milestone | Status |
 |---|---|
 | M0 Scaffolding and synthetic data | Done on `console` (see "As built" in the requirements doc when written): package, config, pytest, `.gitignore`, generator, 12 tests |
-| M1 to M7 | Not started |
+| M1 Backend foundation and structured query log | Done on `console` (see "M1 as built" below) |
+| M2 to M7 | Not started |
 
 ### Findings during M0 that affect later milestones
 - The real manifest has 285 `ocr_low_confidence` files and 509 `failed` (413 "OCR produced no text", 12 permission
@@ -418,3 +419,31 @@ milestone's docs are part of its exit criteria.
 - The synthetic agent log contains one line imitating the "looks like a tool call" message. Its real field names
   are still unconfirmed (open question 9 in the requirements); the fixture must be replaced by a real sample in M4.
 
+### M1 as built (2026-10-31)
+- `console/`: `config.py`, `health.py`, `api.py`; readers `sqlite_ro` (mode=ro + `query_only`, write probe),
+  `lance_reader` (count/schema only), `maintenance_log` (run decided by its own end line), `query_log` (text and
+  JSONL parsers into one `QueryEvent`; flags Open WebUI `### Task:` prompts as system queries).
+- `run_console.py` (`--demo`, `--host`, `--port`; warns on non-loopback bind). Endpoints: `/api/v1/health`,
+  `/api/v1/index/summary`, `/docs`, `/openapi.json` (snapshot in `Doc/api/openapi.json`), `/` placeholder or built UI.
+- `query/structured_log.py` + 5 small edits in `query/engine.py` (`caller` argument, timing marks, one
+  `log_query_event` call per outcome) and `caller=` at the three call sites. Text log verified unchanged against
+  golden lines captured before the change. A logging failure never affects an answer (tested).
+- `scripts/triage.sh` menu item 10 and a non-fatal console line in "run all": checks C1-C4 and C9, fake-`ss`/`curl`
+  tests, `CONSOLE_START_CMD` override for tests. Header comment fixed (`BOT_USER` default `ragr`).
+- Tests: 66 pass (`python -m pytest`, about 14 s). Verified manually on real data: health, index summary
+  (2,539 files, 17,983 chunks) and unchanged `manifest.db` and `lancedb/` checksums after a console session.
+- Decisions made while building:
+  - **SQLite WAL side files.** The manifest uses WAL mode, and a read-only connection still creates/touches
+    `manifest.db-wal` and `-shm`. They carry no data; the main file is never modified. Requirement C2 and tests
+    T-RO-3/4 therefore exclude these two names. Opening with `immutable=1` was rejected because it would return
+    stale or inconsistent data while the maintenance run writes.
+  - **Outcome vocabulary** in the JSONL log: `answered | no_relevant | general_knowledge | error`. "Refused" and
+    "timeout" (FR-3.2) cannot be told apart from an answer inside the engine (a refusal is generated text; the 60 s
+    MCP timeout happens in OpenClaw), so page 3 derives "slow" from `total_s` and takes timeouts from the agent
+    logs (page 4).
+  - `gen_tokens` / `tok_per_s` are null on `main` (token metrics exist only on branch `alternate`); the text-log
+    parser fills them when the old log has a `generation:` line.
+- Operational note: the running `run_mcp_server.py` and `run_server.py` processes load the old engine until
+  restarted, so no JSONL records appear until then (`triage.sh 10` warns about this).
+- Merge note: `alternate` also edits `query/engine.py` and `query/logging_setup.py`. This milestone does not touch
+  `logging_setup.py`; expect a small textual conflict in `engine.py` (timing/metrics lines) if both are merged.

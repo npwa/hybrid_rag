@@ -7,6 +7,8 @@ from pathlib import Path
 
 import yaml
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
 
 @dataclasses.dataclass
 class ConsoleConfig:
@@ -22,12 +24,17 @@ class ConsoleConfig:
     slow_query_seconds: float
     ann_threshold_chunks: int
     mask_queries: bool      # redact query text and file paths in API/UI (FR-3.6, P3)
+    mcp_port: int           # MCP server port probed by the status header
+    ollama_url: str
+    static_dir: Path        # built web UI (console/web/dist), relative to the project root
     demo: bool
 
     @classmethod
-    def load(cls, path: str | Path, demo: bool = False) -> "ConsoleConfig":
+    def load(cls, path: str | Path, demo: bool = False, working_dir: str | Path | None = None) -> "ConsoleConfig":
         raw = yaml.safe_load(Path(path).read_text()) or {}
-        if demo:
+        if working_dir is not None:
+            raw["working_dir"] = str(working_dir)
+        elif demo:
             raw["working_dir"] = raw.get("demo_dir", "demo_data")
             raw["mask_queries"] = False   # synthetic data: nothing to hide
         wd = Path(raw.get("working_dir", ".")).expanduser().resolve()
@@ -49,5 +56,8 @@ class ConsoleConfig:
             slow_query_seconds=float(raw.get("slow_query_seconds", 30)),
             ann_threshold_chunks=int(raw.get("ann_threshold_chunks", 200_000)),
             mask_queries=bool(raw.get("mask_queries", False)),
+            mcp_port=int(raw.get("mcp_port", 8200)),
+            ollama_url=str(raw.get("ollama_url", "http://localhost:11434")).rstrip("/"),
+            static_dir=Path(raw.get("static_dir", PROJECT_ROOT / "console" / "web" / "dist")),
             demo=demo,
         )

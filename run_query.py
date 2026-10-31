@@ -33,7 +33,7 @@ def main() -> int:
         config.allow_general_knowledge_fallback = True
     setup_query_logging(config.logs_dir)
 
-    result = answer_query(args.query, config)
+    result = answer_query(args.query, config, caller="cli")
 
     if result.error:
         print(f"Error: {result.error}")

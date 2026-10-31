@@ -14,6 +14,13 @@ agent_logs_dir: logs/agent         # local copies of OpenClaw logs (pulled from 
 host: 127.0.0.1
 port: 8300
 
+# Probed by the status header (skipped in demo mode)
+mcp_port: 8200
+ollama_url: http://localhost:11434
+
+# Built web UI served at / (empty until the frontend exists); relative to the project root
+static_dir: console/web/dist
+
 # Thresholds
 stale_after_hours: 36              # warn when the last successful index is older (daily cron)
 slow_query_seconds: 30             # a query slower than this is "slow" (MCP timeout is 60 s)

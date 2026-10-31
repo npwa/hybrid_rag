@@ -24,6 +24,7 @@ from query.generation import (
 )
 from query.relevance import has_relevant_results
 from query.sparse import sparse_search
+from query.structured_log import log_query_event
 
 log = logging.getLogger("query")
 
@@ -36,14 +37,17 @@ class QueryResult:
     general_knowledge: bool = False
 
 
-def answer_query(query: str, config: QueryConfig) -> QueryResult:
+def answer_query(query: str, config: QueryConfig, caller: str = "unknown") -> QueryResult:
+    """`caller` (cli | http | mcp) only labels the structured JSONL log; it never affects results."""
     start = time.monotonic()
 
     try:
         vector = embed_batch([query], config)[0]
     except EmbeddingError as e:
         log.warning("QUERY_EMBED_FAILED %r: %s", query, e)
+        log_query_event(config, query, caller, "error", error=f"embedding failed: {e}", total_s=time.monotonic() - start)
         return QueryResult(answer="", error=f"embedding failed: {e}")
+    embed_s = time.monotonic() - start
 
     tbl = open_table(config)
     dense_results = dense_search(tbl, vector, config.top_n_dense)
@@ -57,6 +61,8 @@ def answer_query(query: str, config: QueryConfig) -> QueryResult:
         # Default behavior: strict document-grounding, no LLM call needed since there's
         # nothing to ground an answer in (see Doc/step-5-requirements.md's design note).
         log.info("QUERY %r -> not relevant, fallback disabled", query)
+        log_query_event(config, query, caller, "no_relevant", total_s=time.monotonic() - start, embed_s=embed_s,
+                        retrieve_s=time.monotonic() - start - embed_s)
         return QueryResult(answer="I couldn't find anything relevant to that in your indexed documents.")
 
     if not relevant and config.allow_general_knowledge_fallback:
@@ -65,10 +71,12 @@ def answer_query(query: str, config: QueryConfig) -> QueryResult:
             answer = generate_answer(system, user, config)
         except GenerationError as e:
             log.warning("QUERY_GENERATION_FAILED %r: %s", query, e)
+            log_query_event(config, query, caller, "error", error=f"generation failed: {e}", total_s=time.monotonic() - start)
             return QueryResult(answer="", error=f"generation failed: {e}")
         answer = label_general_knowledge(answer)
         elapsed = time.monotonic() - start
         log.info("QUERY %r -> general-knowledge fallback, %.2fs", query, elapsed)
+        log_query_event(config, query, caller, "general_knowledge", total_s=elapsed, embed_s=embed_s)
         return QueryResult(answer=answer, general_knowledge=True)
 
     conn = sqlite3.connect(f"file:{config.manifest_db}?mode=ro", uri=True)
@@ -81,11 +89,13 @@ def answer_query(query: str, config: QueryConfig) -> QueryResult:
     fused = rrf_fuse([dense_results, sparse_results], k=config.rrf_k, top_k=config.top_k_fused,
                       list_names=["dense", "sparse"])
 
+    retrieved_at = time.monotonic()
     system, user = build_prompt(query, fused)
     try:
         answer = generate_answer(system, user, config)
     except GenerationError as e:
         log.warning("QUERY_GENERATION_FAILED %r: %s", query, e)
+        log_query_event(config, query, caller, "error", error=f"generation failed: {e}", total_s=time.monotonic() - start)
         return QueryResult(answer="", error=f"generation failed: {e}")
 
     # Which leg(s) actually found each source, and at what rank/score — not visible
@@ -105,6 +115,8 @@ def answer_query(query: str, config: QueryConfig) -> QueryResult:
             "sparse_bm25": c.get("score"),
         })
     elapsed = time.monotonic() - start
+    log_query_event(config, query, caller, "answered", sources=sources, total_s=elapsed, embed_s=embed_s,
+                    retrieve_s=retrieved_at - start - embed_s, gen_s=time.monotonic() - retrieved_at)
     log.info(
         "QUERY %r -> %d sources, %.2fs [%s]",
         query, len(sources), elapsed, ", ".join(s["rel_path"] for s in sources),

@@ -14,9 +14,11 @@
 # VM's state or config are never automatic; those are printed as instructions.
 #
 # Overridable (optional):
-#   BOT_HOST (default npabot-u24)   BOT_USER (default nick)
+#   BOT_HOST (default npabot-u24)   BOT_USER (default ragr, read-only)
 #   BOT_KEY  (default ~/.ssh/claude/id_claude_ed25519)
 #   MCP_PORT (default 8200)         BOT_VM (libvirt domain, default npa-u24)
+#   CONSOLE_PORT (default 8300)     operator console (Doc/step-9-requirements.md)
+#   CONSOLE_START_CMD (default: python run_console.py)
 
 set -u
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -27,6 +29,7 @@ BOT_USER="${BOT_USER:-ragr}"   # read-only account; its key runs scripts/vm/ragr
 BOT_KEY="${BOT_KEY:-$HOME/.ssh/claude/id_claude_ed25519}"
 BOT_VM="${BOT_VM:-npa-u24}"
 MCP_PORT="${MCP_PORT:-8200}"
+CONSOLE_PORT="${CONSOLE_PORT:-8300}"
 TOOL="hybrid-rag__ask_documents"
 PY="$PROJECT_DIR/.venv/bin/python"; [ -x "$PY" ] || PY=python3
 
@@ -238,7 +241,52 @@ check_reboot() {
   info "No systemd unit yet, so this must be done after every reboot."
 }
 
-run_all() { check_mcp_server; check_ip; if check_bot_up && check_ssh_login; then check_gateway; check_mcp_from_bot; check_tool_called; fi; check_ollama; check_stale; }
+console_listening() { ss -ltn 2>/dev/null | grep -q ":$CONSOLE_PORT "; }
+
+# Operator console checks (Doc/step-9-plan.md section 4, checks C1-C4 and C9). The console is optional, so
+# with optional=1 (used by "run all") a stopped console is only a warning and is never auto-started.
+check_console() {
+  local optional="${1:-0}"
+  hdr "Operator console (port $CONSOLE_PORT)"
+  if ! console_listening; then
+    if [ "$optional" = 1 ]; then warn "console not running (optional). Start it with: ./run_console.py   (menu 10 offers to start it)"; return 0; fi
+    bad "nothing listening on port $CONSOLE_PORT (console not running)"
+    if confirm "Start ./run_console.py in the background?"; then
+      # CONSOLE_START_CMD is overridable for tests; default starts the real console.
+      nohup ${CONSOLE_START_CMD:-"$PY" "$PROJECT_DIR/run_console.py"} >> "$PROJECT_DIR/logs/console.log" 2>&1 &
+      sleep 3
+      console_listening && ok "console started (log: logs/console.log)" || { bad "console did not start; see logs/console.log"; return 1; }
+    else return 1; fi
+  else ok "console is listening on :$CONSOLE_PORT"; fi
+
+  local body code
+  body=$(curl -s -m 5 -w '\n%{http_code}' "http://127.0.0.1:$CONSOLE_PORT/api/v1/health") || body=$'\n000'
+  code="${body##*$'\n'}"; body="${body%$'\n'*}"
+  if [ "$code" != 200 ]; then bad "GET /api/v1/health returned HTTP $code: ${body:0:200}"; info "see logs/console.log; run ./run_console.py in a terminal to see the error"; return 1; fi
+  "$PY" - "$body" <<'PY'
+import json, sys
+h = json.loads(sys.argv[1])
+def line(tag, msg): print(f"  [{tag}] {msg}")
+line(" OK ", f"API healthy: status={h['status']} version={h['version']}{' (demo data)' if h['demo'] else ''}")
+src = {s["name"]: s for s in h["sources"]}
+ro_bad = [n for n in ("manifest", "lancedb") if src[n]["present"] and src[n]["read_only"] is not True]
+line("FAIL" if ro_bad else " OK ", f"read-only access to data: {'NOT guaranteed for ' + ', '.join(ro_bad) if ro_bad else 'manifest and LanceDB verified read-only'}")
+missing = [n for n in ("manifest", "lancedb", "maintenance_log") if not src[n]["present"]]
+paths = ", ".join(n + " (" + src[n]["path"] + ")" for n in missing)
+line("FAIL" if missing else " OK ", "data sources: " + ("missing " + paths if missing else "manifest, LanceDB, maintenance log present"))
+opt = [n for n in ("agent_logs", "query_jsonl_today") if not src[n]["present"]]
+if opt: line("WARN", "not present yet: " + ", ".join(opt))
+m = h["maintenance"]
+if m["stale"]: line("WARN", f"index looks stale (last successful index: {m['last_successful_index']}, threshold {m['stale_after_hours']} h)")
+sys.exit(1 if (ro_bad or missing) else 0)
+PY
+  local rc=$?; [ $rc -ne 0 ] && FAILS=$((FAILS+1))
+  local today j; today=$(date +%F); j="logs/query_${today}.jsonl"
+  if [ -s "$j" ]; then ok "structured query log is being written ($j, $(wc -l < "$j") records)"
+  else warn "no structured query log yet today ($j). It is written when queries run; servers started before this feature (run_mcp_server.py, run_server.py) must be restarted to load it."; fi
+}
+
+run_all() { check_mcp_server; check_ip; if check_bot_up && check_ssh_login; then check_gateway; check_mcp_from_bot; check_tool_called; fi; check_ollama; check_stale; check_console 1; }
 
 remote_chain() { check_bot_up && check_ssh_login && "$@"; }
 
@@ -255,6 +303,7 @@ cat <<EOM
   7) Can't SSH into $BOT_HOST (key issue)
   8) Desktop IP changed / desktop was rebooted
   9) Run all quick checks
+  10) Operator console not running / looks wrong (port $CONSOLE_PORT)
   q) Quit
 EOM
 }
@@ -270,6 +319,7 @@ dispatch() {
     7) check_bot_up && check_ssh_login ;;
     8) check_reboot; check_ip ;;
     9) run_all ;;
+    10) check_console ;;
     *) echo "  unknown choice: $1"; FAILS=$((FAILS+1)) ;;
   esac
 }
@@ -279,7 +329,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     -y|--yes) ASSUME_YES=1 ;;
     -h|--help) sed -n '2,/^$/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
-    [1-9]) CHOICES+=("$1") ;;
+    [1-9]|10) CHOICES+=("$1") ;;
     *) echo "unknown argument: $1 (try --help)" >&2; exit 2 ;;
   esac
   shift

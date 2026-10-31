@@ -67,7 +67,7 @@ def create_mcp_server(config: QueryConfig) -> MCPServer:
         Returns the answer plus the source files it was grounded in. If nothing
         relevant is indexed, says so explicitly rather than guessing.
         """
-        result = answer_query(query, config)
+        result = answer_query(query, config, caller="mcp")
         if result.error:
             return {"answer": f"Error answering that: {result.error}", "sources": []}
         return {

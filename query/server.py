@@ -40,7 +40,7 @@ def create_app(config: QueryConfig) -> FastAPI:
         user_messages = [m for m in req.messages if m.role == "user"]
         query = user_messages[-1].content if user_messages else ""
 
-        result = answer_query(query, config)
+        result = answer_query(query, config, caller="http")
         if result.error:
             content = f"Sorry, something went wrong answering that: {result.error}"
         else:

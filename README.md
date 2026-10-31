@@ -128,4 +128,31 @@ with the Signal app wired through signal-cli.
 Run `scripts/triage.sh` for an interactive menu of common failures (Signal can't find
 `hybrid-rag__ask_documents`, no Signal reply, slow/timed-out answers, stale index, SSH
 key problems on `npabot-u24`). Checks are read-only; known fixes are offered with an
-`apply the fix? (y/N)` prompt.
+`apply the fix? (y/N)` prompt. Menu item 10 checks the operator console (below).
+
+## Operator console (in progress)
+
+A read-only API (and, in later milestones, a web UI) that shows pipeline health, how
+retrieval reached an answer, query-log analytics and OpenClaw tool-call behavior. It never
+changes the index, the manifest or any server's behavior and runs as its own process.
+Requirements: `Doc/step-9-requirements.md`; plan and status: `Doc/step-9-plan.md`.
+
+Status: **milestone M1** (API foundation). Available now: `GET /api/v1/health` (status
+header data and read-only proof), `GET /api/v1/index/summary`, interactive API docs at
+`/docs`. The pages themselves (index health, query explorer, query analytics, tool-call
+monitor) are not built yet.
+
+```bash
+pip install -r requirements-dev.txt                  # adds pytest, httpx for the console tests
+python scripts/make_synthetic_data.py                 # fictional demo data in ./demo_data
+./run_console.py --demo                               # http://127.0.0.1:8300 on the demo data
+./run_console.py --config config/console_config.yaml # real data (copy the example config first)
+python -m pytest                                      # tests; need no Ollama and no real data
+```
+
+The console binds to 127.0.0.1 only; the data it shows is personal and there is no
+authentication in v1. Screenshots and demos must use `--demo` data.
+
+The query engine now also writes a structured JSONL log next to the text log
+(`logs/query_YYYY-MM-DD.jsonl`); the text log is unchanged. Restart `run_mcp_server.py` and
+`run_server.py` after updating so they pick it up.
