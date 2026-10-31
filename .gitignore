@@ -46,3 +46,5 @@ console/web/dist/
 \#*\#
 .claude.session
 openclaw-*.log
+# scrubbed fixtures for the parser tests (gitignore has no inline comments)
+!tests/fixtures/agent/openclaw-*.log

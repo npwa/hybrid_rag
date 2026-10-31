@@ -18,7 +18,7 @@
 #   BOT_KEY  (default ~/.ssh/claude/id_claude_ed25519)
 #   MCP_PORT (default 8200)         BOT_VM (libvirt domain, default npa-u24)
 #   CONSOLE_PORT (default 8300)     operator console (Doc/step-9-requirements.md)
-#   CONSOLE_START_CMD (default: python run_console.py)
+#   CONSOLE_START_CMD (default: python run_console.py)   AGENT_DIR (logs/agent)   PULL_MAX_HOURS (36)   PULL_CMD
 
 set -u
 SCRIPT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"   # absolute: we cd below
@@ -248,6 +248,34 @@ console_listening() { ss -ltn 2>/dev/null | grep -q ":$CONSOLE_PORT "; }
 
 # Operator console checks (Doc/step-9-plan.md section 4, checks C1-C4 and C9). The console is optional, so
 # with optional=1 (used by "run all") a stopped console is only a warning and is never auto-started.
+AGENT_DIR="${AGENT_DIR:-$PROJECT_DIR/logs/agent}"
+PULL_MAX_HOURS="${PULL_MAX_HOURS:-36}"
+
+check_agent_pull() {
+  local newest age_h
+  newest=$(find "$AGENT_DIR" -maxdepth 1 -name 'openclaw-*.log' -printf '%T@\n' 2>/dev/null | sort -n | tail -1)
+  if [ -z "$newest" ]; then
+    warn "no OpenClaw logs copied yet ($AGENT_DIR). The Tool-call monitor needs them: run scripts/pull_agent_logs.sh"
+    if confirm "Run scripts/pull_agent_logs.sh now?"; then ${PULL_CMD:-"$PROJECT_DIR/scripts/pull_agent_logs.sh"} 2>&1 | sed 's/^/         /'; fi
+    return 0
+  fi
+  age_h=$(awk -v n="$newest" -v now="$(date +%s)" 'BEGIN { printf "%.0f", (now - n) / 3600 }')
+  if [ "$age_h" -le "$PULL_MAX_HOURS" ]; then ok "OpenClaw log copies are fresh (newest ${age_h} h old)"
+  else
+    warn "newest OpenClaw log copy is ${age_h} h old (limit ${PULL_MAX_HOURS} h); the VM clears /tmp when it reboots, so history can be lost"
+    if confirm "Run scripts/pull_agent_logs.sh now?"; then ${PULL_CMD:-"$PROJECT_DIR/scripts/pull_agent_logs.sh"} 2>&1 | sed 's/^/         /'; fi
+  fi
+  # C8 (needs the VM): the config summary refreshed by the cron job on the VM is what scripts/triage.sh 1 and 3 read
+  if [ "${BOT_WRAPPER:-0}" != 1 ] && bot_reachable; then
+    local mtime now_s; mtime=$(bot_ssh 'stat -c %Y /tmp/openclaw/config-summary.json' 2>/dev/null)
+    if [[ "$mtime" =~ ^[0-9]+$ ]]; then
+      now_s=$(bot_ssh 'date +%s' 2>/dev/null)
+      if [[ "$now_s" =~ ^[0-9]+$ ]] && [ $((now_s - mtime)) -gt 900 ]; then warn "config summary on $BOT_HOST is $(((now_s - mtime) / 60)) min old (the nick cron job should refresh it every 5 min; see HYR-10)"
+      else ok "config summary on $BOT_HOST is current"; fi
+    else warn "config summary on $BOT_HOST is not readable (HYR-10: /tmp/openclaw ACL, or the nick cron job is not running)"; fi
+  fi
+}
+
 check_console() {
   local optional="${1:-0}"
   hdr "Operator console (port $CONSOLE_PORT)"
@@ -255,6 +283,7 @@ check_console() {
     if [ "$optional" = 1 ]; then warn "console not running (optional). Start it with: ./run_console.py   (menu 10 offers to start it)"; return 0; fi
     bad "nothing listening on port $CONSOLE_PORT (console not running)"
     if confirm "Start ./run_console.py in the background?"; then
+      mkdir -p "$PROJECT_DIR/logs"     # absent in a fresh checkout
       # CONSOLE_START_CMD is overridable for tests; default starts the real console.
       nohup ${CONSOLE_START_CMD:-"$PY" "$PROJECT_DIR/run_console.py"} >> "$PROJECT_DIR/logs/console.log" 2>&1 &
       sleep 3
@@ -284,7 +313,10 @@ if m["stale"]: line("WARN", f"index looks stale (last successful index: {m['last
 sys.exit(1 if (ro_bad or missing) else 0)
 PY
   local rc=$?; [ $rc -ne 0 ] && FAILS=$((FAILS+1))
-  # C5: the API's file count must equal an independent count straight from the manifest it reports using.
+  # C6: the console's copy of the OpenClaw logs (scripts/pull_agent_logs.sh) must be recent; the VM clears /tmp at reboot.
+  check_agent_pull
+
+# C5: the API's file count must equal an independent count straight from the manifest it reports using.
   local mpath sbody
   mpath=$("$PY" -c 'import json,sys; print(next(s["path"] for s in json.loads(sys.argv[1])["sources"] if s["name"]=="manifest"))' "$body" 2>/dev/null)
   sbody=$(curl -s -m 10 "http://127.0.0.1:$CONSOLE_PORT/api/v1/index/summary")

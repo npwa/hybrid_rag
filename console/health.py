@@ -35,7 +35,7 @@ def _source(name: str, path: Path, read_only: bool | None, enforced_by: str, not
 
 
 def build_health(config: ConsoleConfig, now: datetime | None = None) -> dict:
-    now = now or datetime.now()
+    now = now or config.now()
     sources = []
 
     ro = None

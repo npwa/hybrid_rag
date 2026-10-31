@@ -34,13 +34,15 @@ def run_triage(tmp_path, *args, health=None, http_code="200", listening=True, en
         f = bindir / name
         f.write_text(text)
         f.chmod(f.stat().st_mode | stat.S_IXUSR)
-    env = {**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}", "CONSOLE_PORT": "8399", "NO_COLOR": "1", **(env_extra or {})}
+    env = {**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}", "CONSOLE_PORT": "8399", "NO_COLOR": "1",
+           "AGENT_DIR": str(tmp_path / "agent"), **(env_extra or {})}
     return subprocess.run([str(TRIAGE), *args], capture_output=True, text=True, env=env, input=stdin, timeout=90, cwd=ROOT)
 
 
 def make_manifest(tmp_path, n=3):
     import sqlite3
     db = tmp_path / "manifest.db"
+    db.unlink(missing_ok=True)
     c = sqlite3.connect(db)
     c.execute("CREATE TABLE files (file_id TEXT)")
     c.executemany("INSERT INTO files VALUES (?)", [(str(i),) for i in range(n)])
@@ -138,3 +140,30 @@ def test_help_works_from_any_directory_and_lists_choices(tmp_path):
             assert r.returncode == 0 and r.stderr == ""
             assert "Usage:  scripts/triage.sh" in r.stdout and "-y, --yes" in r.stdout
             assert "Menu choices" in r.stdout and "10) Operator console" in r.stdout and "1) Signal says" in r.stdout
+
+
+def make_agent_copy(tmp_path, age_hours):
+    d = tmp_path / "agent"
+    d.mkdir(exist_ok=True)
+    f = d / "openclaw-2026-10-30.abcd1234.log"
+    f.write_text("{}\n")
+    t = __import__("time").time() - age_hours * 3600
+    os.utime(f, (t, t))
+
+
+def test_c6_no_copies_warns_and_yes_runs_the_pull(tmp_path):                      # C6
+    flag = tmp_path / "pulled.flag"
+    r = run_triage(tmp_path, "-y", "10", health=healthy_with_manifest(tmp_path), env_extra={"PULL_CMD": f"touch {flag}"})
+    assert "no OpenClaw logs copied yet" in r.stdout and flag.exists() and r.returncode == 0
+
+
+def test_c6_fresh_copy_is_ok_stale_copy_warns(tmp_path):
+    make_agent_copy(tmp_path, 2)
+    r = run_triage(tmp_path, "10", health=healthy_with_manifest(tmp_path))
+    assert "OpenClaw log copies are fresh (newest 2 h old)" in r.stdout
+    make_agent_copy(tmp_path, 50)
+    r = run_triage(tmp_path, "10", health=healthy_with_manifest(tmp_path), stdin="n\n")
+    assert "newest OpenClaw log copy is 50 h old (limit 36 h)" in r.stdout and r.returncode == 0   # a warning, not a failure
+    flag = tmp_path / "pulled.flag"
+    r = run_triage(tmp_path, "-y", "10", health=healthy_with_manifest(tmp_path), env_extra={"PULL_CMD": f"touch {flag}"})
+    assert flag.exists()

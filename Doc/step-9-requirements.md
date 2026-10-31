@@ -134,6 +134,7 @@ Consequences:
   the tool.
 - FR-4.4. Highlight sessions started while the MCP server was down (tool missing from
   the allowed list), the failure behind HYR-01.
+- FR-4.5. (*Status:* the detection text is the documented one; a real sample is still outstanding, see open question 9.)
 - FR-4.5. The exact log fields that identify "looks like a tool call" must be confirmed
   from real logs before this page is specified further (Q4). Until then the page is
   scoped to what the sample log supports.

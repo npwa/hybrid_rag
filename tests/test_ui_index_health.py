@@ -103,7 +103,7 @@ def test_api_down_shows_status_error(app: Page):
 
 
 def test_other_pages_are_marked_not_built(app: Page):
-    for name, ms in (("Tool-call monitor", "M4"), ("Query analytics", "M5")):
+    for name, ms in (("Query analytics", "M5"),):
         app.get_by_role("link", name=name).click()
         expect(app.get_by_text(f"planned for milestone {ms}")).to_be_visible()
     app.get_by_role("link", name="Index health").click()

@@ -76,3 +76,10 @@ ol.hits li { padding: 6px 0; border-bottom: 1px solid var(--border); } ol.hits l
 .excerpt { font-size: 13px; margin: 4px 0 2px 1.6em; white-space: pre-wrap; } details { margin-left: 1.6em; font-size: 12.5px; } details .excerpt { margin-left: 0; }
 .ok-mark { color: var(--good); } .no-mark { color: var(--muted); } .small { font-size: 12.5px; }
 .pill.branch-dense-sparse { background: var(--good-bg); color: var(--good); } .answer { white-space: pre-wrap; }
+
+.head-row { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px; }
+.head-row label { font-size: 13px; color: var(--muted); }
+.flags { margin: 0; padding-left: 18px; } .flags li { margin: 5px 0; }
+.chart { margin: 0; } .chart svg { width: 100%; height: auto; } .chart .gridline { stroke: var(--border); stroke-width: 1; }
+.chart .axis { fill: var(--muted); font-size: 11px; } .chart .legend { margin-top: 6px; }
+tr.row-bad td { background: var(--bad-bg); }

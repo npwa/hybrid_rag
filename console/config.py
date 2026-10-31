@@ -3,11 +3,15 @@ working_dir; demo mode swaps in the synthetic dataset so nothing real is touched
 from __future__ import annotations
 
 import dataclasses
+from datetime import datetime
 from pathlib import Path
 
 import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+# The demo dataset is frozen in time: demo mode treats this as "now" so the demo never turns stale (and tests stay stable).
+DEMO_NOW = datetime(2026, 10, 31, 8, 0, 0)
 
 
 def _proj(p) -> Path:
@@ -34,6 +38,9 @@ class ConsoleConfig:
     static_dir: Path        # built web UI (console/web/dist), relative to the project root
     query_config: Path      # config/query_config.yaml: the explorer reuses the engine's retrieval settings
     demo: bool
+
+    def now(self) -> datetime:
+        return DEMO_NOW if self.demo else datetime.now()
 
     @classmethod
     def load(cls, path: str | Path, demo: bool = False, working_dir: str | Path | None = None) -> "ConsoleConfig":

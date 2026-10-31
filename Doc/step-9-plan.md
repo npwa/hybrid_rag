@@ -409,7 +409,8 @@ milestone's docs are part of its exit criteria.
 | M1 Backend foundation and structured query log | Done on `console` (see "M1 as built" below) |
 | M2 Page 1, Index health | Done on `console` (see "M2 as built" below) |
 | M3 Page 2, Query explorer | Done on `console` (see "M3 as built" below) |
-| M4 to M7 | Not started |
+| M4 Agent log pull and Page 4, Tool-call monitor | Done on `console` (see "M4 as built" below); real failure-case sample still missing |
+| M5 to M7 | Not started |
 
 ### Findings during M0 that affect later milestones
 - The real manifest has 285 `ocr_low_confidence` files and 509 `failed` (413 "OCR produced no text", 12 permission
@@ -505,3 +506,32 @@ milestone's docs are part of its exit criteria.
   the full path including generation, which the explorer does not.
 - **Merge note:** `query/engine.py` now differs from `alternate` in more places (function split). Resolve by keeping
   `retrieve()` and re-applying alternate's metrics lines in `answer_query()`.
+
+### M4 as built (2026-10-31)
+- **`scripts/pull_agent_logs.sh`** (read-only, as `ragr`; `-n` dry run, `-q` for cron, `BOT_WRAPPER=1` supported): copies
+  `/tmp/openclaw/openclaw-YYYY-MM-DD.log` and `config-summary.json` into `logs/agent/`. Because the VM clears `/tmp` at each
+  reboot and OpenClaw then restarts the *same file name*, each copy is stored as `openclaw-DATE.<fingerprint of the first
+  line>.log`: a growing file is appended in place, a restarted file gets its own copy, nothing local is overwritten or
+  deleted; a non-prefix difference is saved as `.conflict-<time>`. A VM whose `/tmp/openclaw` is unreadable gives a clear
+  error with the HYR-10 hint instead of an empty file. Suggested cron: `7 * * * * .../scripts/pull_agent_logs.sh -q`
+  (not installed by me).
+- **Parser/analysis** `console/readers/agent_log.py`: events from real record shapes (tool starts with `totalMs`, models
+  from `agent model:` lines, MCP connect failures, tool removed by policy, host freezes, Ollama preflight failures, agent
+  failures, "looks like a tool call"); models attributed by the last model line; time-to-tool percentiles; greedy pairing
+  of agent tool starts with desktop MCP requests within 20 s (desktop start = record time minus duration; verified on the
+  real 2026-10-30 pair, 0.6 s apart); text-only days confirm a start but are never counted as MCP traffic.
+- **API** `GET /api/v1/toolcalls/summary?days=` (totals, per model, per day, time-to-tool samples, flags, desktop side,
+  sources and age). **UI** `pages/ToolCalls.tsx` + `TimeToToolChart.tsx` (accessible SVG scatter, nice axis ticks).
+- **Demo data** rewritten to tell the story: 14 days of consistent query logs (text + JSONL) and agent logs; a small model
+  that writes calls as text for 7 days, then a larger model; one morning with the MCP server down. The demo clock is now
+  frozen (`ConsoleConfig.now()`), so the demo never turns stale. The "looks like" WARN record and the milestone
+  `model_response_received` in the demo are invented.
+- **Triage:** C6 (copies fresh, offers to pull; `PULL_CMD`, `AGENT_DIR`, `PULL_MAX_HOURS`), C8 (config summary on the VM
+  recent). C7 (log readable) already existed.
+- **Docs:** console guide section, runbooks `tool-never-called.md` and `mcp-server-down.md`, README.
+- **Tests:** 184 pass: 11 parser/analysis (incl. scrubbed real fixtures in `tests/fixtures/agent/`), 9 API, 8 pull-script
+  (fake ssh: idempotence, growth, VM reboot, prefix, permission error, dry run, quiet, wrapper), 2 triage, 11 browser.
+- **Not achieved:** open question 9 (reproduce the failure-case message with a small model). It needs the agent model
+  changed on the bot VM, which this read-only access cannot do, and the VM was unreachable ("No route to host") for part of
+  the session. Detection is based on the documented message; the rate of turns without a tool start is the fallback.
+  Real-data check used the two real log copies already on hand (1 turn: the 2026-10-30 router question, 50.2 s to tool).

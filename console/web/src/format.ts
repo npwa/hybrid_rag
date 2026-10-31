@@ -13,3 +13,4 @@ export const fmtAge = (h: number | null | undefined) => {
   if (h < 48) return `${h.toFixed(1)} h ago`;
   return `${(h / 24).toFixed(1)} days ago`;
 };
+export const fmtMs = (ms: number | null | undefined) => (ms == null ? "–" : ms >= 10000 ? `${(ms / 1000).toFixed(0)} s` : ms >= 1000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.round(ms)} ms`);

@@ -58,3 +58,8 @@ the permission warning.
 
 ## Related
 HYR-09 (`ragr` account hardening), `Doc/step-9-requirements.md` §7.
+
+## Update 2026-10-31: desktop-side copy
+`scripts/pull_agent_logs.sh` (step 9, M4) now copies the logs to `logs/agent/` read-only and keeps each VM incarnation of a
+day's file separately, so reboots no longer lose history that was already pulled. It still needs the directory ACL to be
+readable at pull time; with a daily reboot at about 21:52 an hourly pull (cron `7 * * * *`) loses at most the last hour.

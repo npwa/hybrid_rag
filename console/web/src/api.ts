@@ -51,6 +51,25 @@ export interface Exploration {
   timings: Record<string, number>; answer: string | null; generation_error: string | null;
 }
 
+export interface Pctl { count: number; p50: number | null; p95: number | null; max: number | null }
+export interface ModelRow { model: string; turns: number; tool_starts: number; tool_rate: number | null; looks_like: number; time_to_tool_ms: Pctl }
+export interface DayRow {
+  day: string; turns: number; tool_starts: number; looks_like_tool_call: number; desktop_mcp_calls: number; matched: number;
+  agent_starts_without_desktop_call: number; mcp_connect_failures: number; host_gaps: number; models: string[]; time_to_tool_ms: Pctl;
+}
+export interface Flag { kind: string; ts: string; model: string; detail: string; turns_without_tool_after?: number }
+export interface ToolCalls {
+  available: boolean; detail?: string;
+  sources: { files: number; newest_file: string | null; age_hours: number | null; agent_logs_dir: string; config_summary: Record<string, unknown> | null; pull_script: string };
+  days?: number; coverage?: { first: string | null; last: string | null };
+  totals?: { turns: number; tool_starts: number; matched: number; matched_by_time_only: number; agent_starts_without_desktop_call: number; desktop_calls_without_agent_start: number;
+             looks_like_tool_call: number; mcp_connect_failures: number; tool_removed_by_policy: number };
+  models?: ModelRow[]; by_day?: DayRow[]; time_to_tool_ms?: Pctl;
+  time_to_tool_samples?: { ts: string; ms: number; model: string }[];
+  desktop?: { calls: number; total_s: { count: number; p50: number | null; p95: number | null; max: number | null }; by_outcome: Record<string, number> };
+  flags?: Flag[]; jsonl_days_with_mcp_records?: number;
+}
+
 export class ApiError extends Error {
   constructor(public status: number, public detail: string) { super(`${status}: ${detail}`); }
 }
@@ -85,5 +104,6 @@ export const api = {
   health: () => get<Health>("/health"),
   summary: () => get<Summary>("/index/summary"),
   failures: (p: Record<string, string | number | boolean | undefined>) => get<FailurePage>("/index/failures", p),
+  toolcalls: (days: number) => get<ToolCalls>("/toolcalls/summary", { days }),
   runs: (limit = 10) => get<{ total: number; items: Run[] }>("/maintenance/runs", { limit }),
 };

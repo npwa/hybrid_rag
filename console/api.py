@@ -2,8 +2,10 @@
 Created per config so tests and demo mode can point it at any data root."""
 from __future__ import annotations
 
+import json
 import logging
 import threading
+from datetime import datetime, timedelta
 
 from fastapi import FastAPI, Query, Request
 from pydantic import BaseModel, Field
@@ -14,7 +16,7 @@ from console import __version__
 from console.config import ConsoleConfig
 from console.health import build_health
 from console.failures import CAUSES
-from console.readers import maintenance_log
+from console.readers import agent_log, maintenance_log, query_log
 from console.readers.lance_reader import LanceReadOnly
 from console.readers.sqlite_ro import FAILURE_SORTS, failures as failures_query, open_ro, summary as summary_query
 
@@ -124,6 +126,38 @@ def create_app(config: ConsoleConfig, embed=None, query_config=None) -> FastAPI:
             if isinstance(e, EmbeddingError):
                 return JSONResponse(status_code=502, content={"error": "embedding_failed", "detail": str(e)})
             raise
+
+    @app.get("/api/v1/toolcalls/summary", summary="Agent tool-call activity from OpenClaw logs, reconciled with desktop MCP calls")
+    def toolcalls_summary(days: int = Query(30, ge=1, le=365)):
+        now = config.now()
+        events, files = agent_log.read_dir(config.agent_logs_dir)
+        summary_file = config.agent_logs_dir / "config-summary.json"
+        agent_cfg = None
+        if summary_file.exists():
+            try:
+                agent_cfg = json.loads(summary_file.read_text())
+            except (OSError, json.JSONDecodeError):
+                agent_cfg = None
+        newest = max((f.stat().st_mtime for f in files), default=None)
+        age = None if newest is None else round((now.timestamp() - newest) / 3600, 1)
+        if config.demo and events:
+            age = round((now - events[-1].ts).total_seconds() / 3600, 1)      # demo files carry the generation time, not the demo clock
+        sources = {"files": len(files), "newest_file": files[-1].name if files else None,
+                   "age_hours": age,
+                   "agent_logs_dir": str(config.agent_logs_dir),
+                   "config_summary": agent_cfg, "pull_script": "scripts/pull_agent_logs.sh"}
+        if not files:
+            return {"available": False, "sources": sources,
+                    "detail": "No OpenClaw logs found. Run scripts/pull_agent_logs.sh to copy them from the bot VM."}
+        qev = []
+        for i in range(days + 1):
+            qev += query_log.read_day(config.logs_dir, (now.date() - timedelta(days=i)).isoformat())
+        calls = agent_log.mcp_calls_from_events(qev)
+        result = agent_log.analyze(events, calls, days=days, now=now,
+                                   fallback_model=(agent_cfg or {}).get("primary_model"))
+        return {"available": True, "sources": sources, "jsonl_days_with_mcp_records": sum(
+                    1 for i in range(days + 1) if (config.logs_dir / f"query_{(now.date() - timedelta(days=i)).isoformat()}.jsonl").exists()),
+                **result}
 
     @app.exception_handler(404)
     async def not_found(request: Request, exc):

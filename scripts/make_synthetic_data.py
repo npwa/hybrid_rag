@@ -5,8 +5,10 @@ Output (default ./demo_data, git-ignored) mirrors the real working directory lay
   manifest.db            files + chunks + FTS5 (same schema as ingest/manifest.py)
   lancedb/               table "chunks" with 768-d hashed bag-of-words vectors (console/demo_embed.py; NOT semantic)
   logs/maintenance.log   history with an old FAILED run followed by OK runs
-  logs/query_*.log       text query logs in the real format
-  logs/agent/            OpenClaw-style JSON-lines logs + config-summary.json
+  logs/query_*.log       text query logs in the real format, plus query_*.jsonl (same events)
+  logs/agent/            OpenClaw-style JSON-lines logs + config-summary.json, consistent with the query logs
+                         (a model change after 7 days, an MCP outage, text-instead-of-tool-call turns: SYNTHETIC;
+                         the milestone 'model_response_received' and the WARN record carrying the looks-like text are invented)
 
 Nothing here derives from real documents, paths, queries or phone numbers (tests check).
 Same --seed gives byte-identical manifest content, which tests rely on.
@@ -175,53 +177,97 @@ def make_maintenance_log(out: Path, rng: random.Random) -> None:
     (out / "logs" / "maintenance.log").write_text("\n".join(lines) + "\n")
 
 
-def make_query_logs(out: Path, rng: random.Random, sources_pool: list[str]) -> None:
+def make_activity(out: Path, rng: random.Random, sources_pool: list[str]) -> None:
+    """Query logs (text + JSONL) and the matching OpenClaw agent logs for 14 days.
+
+    Story the demo tells: days 1-7 the agent model is a small one that often writes a tool call as text instead of
+    calling it; from day 8 a larger model is used and almost every turn calls the tool; one day the MCP server was down
+    for part of the morning (connect failure, agent starts the tool, the desktop never sees a request)."""
     logs = out / "logs"
-    for d in range(14):
-        day = (NOW - timedelta(days=13 - d)).date()
-        lines = []
-        for _ in range(rng.randint(2, 7)):
-            t = datetime(day.year, day.month, day.day, rng.randint(7, 22), rng.randint(0, 59), rng.randint(0, 59))
-            q = rng.choice(QUESTIONS)
-            kind = rng.random()
-            if kind < 0.15:
-                lines.append(f"{_iso(t)} INFO     QUERY '{q}' -> not relevant, fallback disabled")
-            elif kind < 0.2:
-                lines.append(f"{_iso(t)} WARNING  QUERY_EMBED_FAILED '{q}': could not reach Ollama at http://localhost:11434: timed out")
-            else:
-                secs = round(rng.choice([0.4, 0.7, 2.0, 6.0, 6.5, 14.2, 41.0]), 2)
-                srcs = rng.sample(sources_pool, 8)
-                lines.append(f"{_iso(t)} INFO     QUERY '{q}' -> 8 sources, {secs}s [{', '.join(srcs)}]")
-                lines.append(f"{_iso(t)} INFO     QUERY '{q}' fusion detail: {srcs[0]} branch=dense+sparse rrf=0.03279 dense(rank=1,dist=0.70) sparse(rank=1,bm25=-27.7); {srcs[1]} branch=dense rrf=0.01613 dense(rank=2,dist=0.79)")
-                lines.append(f"{_iso(t)} INFO     QUERY '{q}' generation: 24 tokens in 0.23s (104.4 tok/s)")
-        lines.sort()
-        (logs / f"query_{day.isoformat()}.log").write_text("\n".join(lines) + "\n")
+    agent = logs / "agent"
+    agent.mkdir(parents=True, exist_ok=True)
+    SMALL, BIG = MODELS
+    days = [(NOW - timedelta(days=13 - d)).date() for d in range(14)]
+    outage_day = days[10]
 
-
-def make_agent_logs(out: Path, rng: random.Random) -> None:
-    ad = out / "logs" / "agent"
-    ad.mkdir(parents=True, exist_ok=True)
-
-    def rec(sub: str, msg, when: datetime, level: str = "INFO") -> str:
+    def rec(sub, msg, when, level="INFO"):
         return json.dumps({"0": json.dumps({"subsystem": sub}), "1": msg,
-                           "_meta": {"hostname": "demo-bot", "name": json.dumps({"subsystem": sub}),
-                                     "date": when.strftime("%Y-%m-%dT%H:%M:%S.000Z"), "logLevelName": level}})
+                           "_meta": {"hostname": "demo-bot", "date": (when + timedelta(hours=7)).strftime("%Y-%m-%dT%H:%M:%S.000Z"), "logLevelName": level},
+                           "time": when.strftime("%Y-%m-%dT%H:%M:%S.000-07:00")})
 
-    for d in (1, 0):
-        day = NOW - timedelta(days=d)
-        t = datetime(day.year, day.month, day.day, 7, 0, 0)
-        lines = [rec("gateway", "gateway ready", t), rec("gateway", f"agent model: {MODELS[1]} (thinking=medium, fast=off)", t)]
-        for k in range(rng.randint(2, 5)):
-            t += timedelta(minutes=rng.randint(20, 120))
-            lines.append(rec("auto-reply/agent-turn-timing", {
-                "runId": f"demo-run-{d}-{k}", "sessionKey": "agent:main:main", "milestone": "tool_execution_started",
-                "totalMs": rng.choice([3200, 5400, 9800, 50248]), "spans": [{"name": "fallback_prepare_harness", "durationMs": 0, "elapsedMs": 6}]}, t))
-        if d == 1:
-            lines.append(rec("agent/embedded", "Assistant reply looks like a tool call, but no structured tool invocation was emitted", t, "WARN"))
-        (ad / f"openclaw-{day.date().isoformat()}.log").write_text("\n".join(lines) + "\n")
-    (ad / "config-summary.json").write_text(json.dumps({
+    run_n = 0
+    for d_i, day in enumerate(days):
+        model = SMALL if d_i < 7 else BIG
+        text_lines, jsonl_lines, agent_lines = [], [], []
+        t0 = datetime(day.year, day.month, day.day, 6, 55, 0)
+        agent_lines.append(rec("gateway", "gateway ready", t0))
+        agent_lines.append(rec("gateway", f"agent model: {model} (thinking=medium, fast=off)", t0))
+        if day == outage_day:
+            agent_lines.append(rec("agent/embedded", 'MCP: failed to start server "hybrid-rag": connect ECONNREFUSED 192.0.2.10:8200', t0 + timedelta(minutes=1), "ERROR"))
+            agent_lines.append(rec("gateway/health", "host timing gap detected: process was frozen ~32123198ms; restarting channels when idle and refreshing health", t0 + timedelta(minutes=2), "WARN"))
+        if day == days[12]:
+            agent_lines.append(rec("memory", "memory sync failed (automatic candidates): Memory sync aborted: embedding provider is unavailable", t0 + timedelta(minutes=3), "WARN"))
+        events = []
+        for _ in range(rng.randint(3, 8)):
+            t = datetime(day.year, day.month, day.day, rng.randint(7, 22), rng.randint(0, 59), rng.randint(0, 59))
+            kind = rng.random()
+            caller = rng.choices(["mcp", "cli", "http"], weights=[70, 20, 10])[0]
+            events.append((t, rng.choice(QUESTIONS), kind, caller))
+        for t, q, kind, caller in sorted(events):
+            secs = round(rng.choice([0.4, 0.7, 2.0, 6.0, 6.5, 14.2, 41.0]), 2)
+            srcs = rng.sample(sources_pool, 8)
+            if kind < 0.15:
+                outcome, err = "no_relevant", None
+                text_lines.append(f"{_iso(t)} INFO     QUERY '{q}' -> not relevant, fallback disabled")
+                secs = round(rng.uniform(0.05, 0.4), 2); srcs = []
+            elif kind < 0.2:
+                outcome, err = "error", "embedding failed: could not reach Ollama at http://localhost:11434: timed out"
+                text_lines.append(f"{_iso(t)} WARNING  QUERY_EMBED_FAILED '{q}': could not reach Ollama at http://localhost:11434: timed out")
+                secs = 60.0; srcs = []
+            else:
+                outcome, err = "answered", None
+                text_lines.append(f"{_iso(t)} INFO     QUERY '{q}' -> 8 sources, {secs}s [{', '.join(srcs)}]")
+                text_lines.append(f"{_iso(t)} INFO     QUERY '{q}' fusion detail: {srcs[0]} branch=dense+sparse rrf=0.03279 dense(rank=1,dist=0.70) sparse(rank=1,bm25=-27.7); {srcs[1]} branch=dense rrf=0.01613 dense(rank=2,dist=0.79)")
+                text_lines.append(f"{_iso(t)} INFO     QUERY '{q}' generation: 24 tokens in 0.23s (104.4 tok/s)")
+            jsonl_lines.append(json.dumps({
+                "schema": 1, "ts": _iso(t), "query": q, "caller": caller, "outcome": outcome, "error": err, "n_sources": len(srcs),
+                "sources": [{"rel_path": x, "chunk_id": _sha("c", x), "branch": "dense+sparse" if i == 0 else "dense", "rrf_score": 0.03 - i * 0.001,
+                             "dense_rank": i + 1, "dense_distance": 0.7 + i * 0.01, "sparse_rank": 1 if i == 0 else None, "sparse_bm25": -27.7 if i == 0 else None}
+                            for i, x in enumerate(srcs)],
+                "total_s": secs, "embed_s": 0.04, "retrieve_s": round(min(secs, 0.2), 3), "gen_s": round(max(secs - 0.25, 0), 3) if outcome == "answered" else None,
+                "gen_tokens": None, "tok_per_s": None, "distance_threshold": 0.85, "min_hits": 1}))
+            if caller != "mcp":
+                continue
+            run_n += 1
+            run_id = f"demo-run-{run_n:04d}"
+            start = t - timedelta(seconds=secs)
+            if day == outage_day and t.hour < 12:
+                # tool started by the agent but the request never reached the desktop: drop the desktop record again
+                text_lines = [l for l in text_lines if not (l.startswith(_iso(t)) and f"'{q}'" in l)]
+                jsonl_lines.pop()
+            if d_i < 7 and rng.random() < 0.35:                    # small model writes the call as text
+                agent_lines.append(rec("auto-reply/agent-turn-timing", {"runId": run_id, "sessionKey": "agent:main:main", "milestone": "model_response_received", "totalMs": rng.randint(4000, 20000)}, start))
+                agent_lines.append(rec("agent/embedded", {"runId": run_id, "message": LOOKS_LIKE_TEXT}, start, "WARN"))
+                text_lines = [l for l in text_lines if not (l.startswith(_iso(t)) and f"'{q}'" in l)]
+                jsonl_lines.pop()
+                continue
+            ttt = rng.choice([3200, 5400, 9800, 21000, 50248]) if d_i >= 7 else rng.choice([7000, 14000, 33000])
+            agent_lines.append(rec("auto-reply/agent-turn-timing", {
+                "runId": run_id, "sessionKey": "agent:main:main", "milestone": "tool_execution_started", "totalMs": ttt,
+                "spans": [{"name": "fallback_prepare_harness", "durationMs": 0, "elapsedMs": 6}]}, start - timedelta(seconds=0.6)))
+        if day == days[9]:
+            agent_lines.append(rec("gateway", "[cron:demo] This automation uses ollama/qwen3.6:35b-a3b but the local provider preflight failed at http://192.0.2.10:11434. Last error: Local provider preflight exceeded its configured 2500ms deadline | request timed out", t0 + timedelta(minutes=4), "WARN"))
+        agent_lines.sort(key=lambda l: json.loads(l)["time"])
+        text_lines.sort()
+        (logs / f"query_{day.isoformat()}.log").write_text("\n".join(text_lines) + ("\n" if text_lines else ""))
+        (logs / f"query_{day.isoformat()}.jsonl").write_text("\n".join(jsonl_lines) + ("\n" if jsonl_lines else ""))
+        (agent / f"openclaw-{day.isoformat()}.log").write_text("\n".join(agent_lines) + "\n")
+    (agent / "config-summary.json").write_text(json.dumps({
         "mcp_url": "http://192.0.2.10:8200/mcp", "mcp_enabled": True, "tools_allow_has_tool": True,
-        "sandbox_alsoAllow_has_tool": True, "primary_model": MODELS[1]}, indent=1) + "\n")
+        "sandbox_alsoAllow_has_tool": True, "primary_model": BIG}, indent=1) + "\n")
+
+
+LOOKS_LIKE_TEXT = "Assistant reply looks like a tool call, but no structured tool invocation was emitted"
 
 
 def main() -> int:
@@ -241,8 +287,7 @@ def main() -> int:
     chunks = make_manifest(out, rng)
     make_vectors(out, chunks, rng)
     make_maintenance_log(out, rng)
-    make_query_logs(out, rng, sorted({c["rel_path"] for c in chunks}))
-    make_agent_logs(out, rng)
+    make_activity(out, rng, sorted({c["rel_path"] for c in chunks}))
     print(f"wrote demo dataset to {out}: {len(chunks)} chunks")
     return 0
 

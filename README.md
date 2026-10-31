@@ -137,14 +137,16 @@ retrieval reached an answer, query-log analytics and OpenClaw tool-call behavior
 changes the index, the manifest or any server's behavior and runs as its own process.
 Requirements: `Doc/step-9-requirements.md`; plan and status: `Doc/step-9-plan.md`.
 
-Status: **milestone M3**. The **Query explorer** works: type a question and see the dense and keyword hits, the fused
+Status: **milestone M4**. The **Tool-call monitor** works too (OpenClaw logs copied by `scripts/pull_agent_logs.sh`, reconciled with the
+desktop's query log). The **Query explorer** works: type a question and see the dense and keyword hits, the fused
 ranking, the relevance-gate verdict and timings (nothing is written to the production query logs). The **Index health** page works: files by outcome, type and failure cause,
 maintenance history, index staleness, the ANN-index gauge and a filterable list of problem files, each linked to a
-ticket and a runbook. The other two pages (tool-call monitor, query analytics) are tabs that say "not built yet". User guide: `Doc/console-guide.md`. API docs at `/docs` while it runs.
+ticket and a runbook. The last page (query analytics) is a tab that says "not built yet". User guide: `Doc/console-guide.md`. API docs at `/docs` while it runs.
 
 ```bash
 pip install -r requirements-dev.txt                  # adds pytest, httpx for the console tests
 python scripts/make_synthetic_data.py                 # fictional demo data in ./demo_data
+scripts/pull_agent_logs.sh                            # copy OpenClaw logs from the bot VM into logs/agent (read-only; hourly cron suggested)
 ./run_console.py --demo                               # http://127.0.0.1:8300 on the demo data
 ./run_console.py --config config/console_config.yaml # real data (copy the example config first)
 (cd console/web && npm install && npm run build)     # build the web UI once (Node 20+); the API serves console/web/dist

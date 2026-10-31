@@ -60,11 +60,35 @@ are not comparable with real ones; no language model is connected, so generation
 
 **Limits.** One exploration at a time (a second gets a "busy" message); questions up to 1,000 characters.
 
+## Page 4: Tool-call monitor
+Answers: does the agent model really call `ask_documents`, how long does it take to start, and does the desktop see the
+request? Data comes from the OpenClaw logs on the bot VM, copied into `logs/agent/` by `scripts/pull_agent_logs.sh`
+(read-only; run it hourly from cron, because the VM clears /tmp when it reboots), and from the desktop's structured
+query log (`caller` = `mcp`).
+
+**Numbers.** *Agent turns*: distinct agent runs seen in the log. *Real tool-call rate*: turns where OpenClaw logged
+`tool_execution_started`. *Tool call written as text*: the model printed a tool call instead of making it (OpenClaw
+logs "looks like a tool call, but no structured tool invocation was emitted"; see the caveat below). *Seen by the
+desktop*: tool starts paired with a desktop MCP request that began within 20 s of it; a start without a request means
+the call never reached the MCP server. *Time to tool*: from the message arriving until the tool starts (agent side;
+retrieval is the desktop's own time).
+
+**Needs a look** lists the events worth reading: MCP connect failures (sessions started then have no tool until `/new`),
+a tool started but never seen by the desktop, a tool removed by policy, text-instead-of-call turns, the VM being frozen,
+Ollama preflight failures. **By agent model** compares models (rate, text calls, time to tool). **By day** puts the agent
+side next to the desktop side; a red row has a failure to look at.
+
+**Caveats.** (1) The "written as text" line has not yet been seen in a real log; the detection uses the message
+documented in `Doc/step-5-requirements.md`, and a turn with no tool start is always visible in the rate. (2) Before the
+structured query log existed (before 2026-10-31) the desktop side cannot tell MCP from other callers, so a tool start is
+confirmed by any query logged at that time and is not counted as an MCP request. (3) The `dev` OpenClaw instance's logs
+are ignored. Runbooks: `Doc/Runbooks/tool-never-called.md`, `Doc/Runbooks/mcp-server-down.md`.
+
 ## Pages not built yet
-Tool-call monitor (M4) and Query analytics (M5): the tabs exist and say so.
+Query analytics (M5): the tab exists and says so.
 
 ## API (for scripts)
-Interactive docs at `/docs`; snapshot in `Doc/api/openapi.json`. Page 2 uses `POST /api/v1/explore` (body `{"query": "...", "generate": false}`). Page 1 uses `/api/v1/health`,
+Interactive docs at `/docs`; snapshot in `Doc/api/openapi.json`. Page 4 uses `GET /api/v1/toolcalls/summary?days=30`. Page 2 uses `POST /api/v1/explore` (body `{"query": "...", "generate": false}`). Page 1 uses `/api/v1/health`,
 `/api/v1/index/summary`, `/api/v1/index/failures`, `/api/v1/index/causes`, `/api/v1/maintenance/runs`.
 
 ## Privacy
