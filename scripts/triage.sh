@@ -21,7 +21,8 @@
 #   CONSOLE_START_CMD (default: python run_console.py)
 
 set -u
-PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"   # absolute: we cd below
+PROJECT_DIR="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
 cd "$PROJECT_DIR" || exit 1
 
 BOT_HOST="${BOT_HOST:-npabot-u24}"
@@ -67,7 +68,8 @@ bot_verb() {
     id)      bot_ssh id ;;
     uptime)  bot_ssh uptime -s ;;
     gateway) bot_ssh 'c=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 http://127.0.0.1:18789/); if [ "$c" = 200 ] && pgrep -u nick -f "openclaw.*gateway" >/dev/null; then echo active; else echo "inactive (http=$c)"; fi' ;;
-    log)     bot_ssh 'cat /tmp/openclaw/openclaw-$(date +%F).log' ;;
+    log)     # today's log; just after midnight it may not exist yet, so fall back to the newest one
+             bot_ssh 'f=/tmp/openclaw/openclaw-$(date +%F).log; [ -e "$f" ] || f=$(ls -t /tmp/openclaw/openclaw-20*.log 2>/dev/null | head -1); cat "$f"' ;;
     config)  bot_ssh 'cat /tmp/openclaw/config-summary.json 2>/dev/null || echo "{}"' ;;
     *)       echo "unknown verb $1" >&2; return 2 ;;
   esac
@@ -87,7 +89,7 @@ bot_reachable() { ping -c1 -W2 "$BOT_HOST" >/dev/null 2>&1; }
 bot_login_ok()  { bot_verb id >/dev/null; }
 
 start_mcp() {
-  nohup "$PROJECT_DIR/run_mcp_server.py" >> "$PROJECT_DIR/logs/run_stdout.log" 2>&1 &
+  nohup "$PY" "$PROJECT_DIR/run_mcp_server.py" >> "$PROJECT_DIR/logs/run_stdout.log" 2>&1 &
   sleep 3
   mcp_listening && ok "MCP server started (pid $!)" || bad "still not listening; see logs/run_stdout.log"
 }
@@ -115,7 +117,8 @@ check_ip() {
   mine=$(hostname -I | tr ' ' '\n' | grep '^192\.168\.1\.' | head -1)
   cfg=$(bot_verb config | "$PY" -c "import sys,json; print(json.load(sys.stdin).get('mcp_url') or '')" 2>/dev/null)
   info "desktop LAN IP: ${mine:-unknown}   configured URL: ${cfg:-unreadable}"
-  if [[ -n "$mine" && "$cfg" == *"//$mine:"* ]]; then ok "they match"
+  if [ -z "$cfg" ]; then warn "cannot compare: the config summary on $BOT_HOST is unreadable (/tmp/openclaw/config-summary.json; see HYR-10: /tmp/openclaw ACL is lost when the VM reboots)"
+  elif [[ -n "$mine" && "$cfg" == *"//$mine:"* ]]; then ok "they match"
   else bad "mismatch. Edit mcp.servers.hybrid-rag.url in ~nick/.openclaw/openclaw.json on $BOT_HOST (or reserve a static IP), then restart the gateway. Not automated."; fi
 }
 
@@ -328,7 +331,7 @@ CHOICES=()
 while [ $# -gt 0 ]; do
   case "$1" in
     -y|--yes) ASSUME_YES=1 ;;
-    -h|--help) sed -n '2,/^$/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,/^$/p' "$SCRIPT_PATH" | sed 's/^# \{0,1\}//'; echo "Menu choices (CHOICE):"; menu | grep -E '^ *[0-9]+\)' ; exit 0 ;;
     [1-9]|10) CHOICES+=("$1") ;;
     *) echo "unknown argument: $1 (try --help)" >&2; exit 2 ;;
   esac

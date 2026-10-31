@@ -100,3 +100,13 @@ def test_menu_lists_console_item():
     env = {**os.environ, "NO_COLOR": "1"}
     r = subprocess.run([str(TRIAGE)], capture_output=True, text=True, env=env, input="q\n", cwd=ROOT, timeout=30)
     assert "10) Operator console" in r.stdout
+
+
+def test_help_works_from_any_directory_and_lists_choices(tmp_path):
+    for flag in ("-h", "--help"):
+        for cwd in (ROOT, ROOT / "scripts", tmp_path):
+            r = subprocess.run([str(TRIAGE), flag], capture_output=True, text=True, cwd=cwd, timeout=30,
+                               env={**os.environ, "NO_COLOR": "1"})
+            assert r.returncode == 0 and r.stderr == ""
+            assert "Usage:  scripts/triage.sh" in r.stdout and "-y, --yes" in r.stdout
+            assert "Menu choices" in r.stdout and "10) Operator console" in r.stdout and "1) Signal says" in r.stdout
