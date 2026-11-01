@@ -1,7 +1,7 @@
 # HYR-01: MCP server has no service supervisor (manual start only)
 
 - **Severity:** High
-- **Status:** Fixed in code on branch `console` (2026-11-01); takes effect when the owner runs `scripts/install_services.sh --enable` and `loginctl enable-linger`; acceptance (reboot test) pending
+- **Status:** Fixed in code on branch `console` (2026-11-01); installed and enabled by the owner (2026-11-01, lingering on); acceptance (reboot test) pending
 - **Component:** `run_mcp_server.py` (desktop npalmass-desk1, port 8200)
 
 ## Impact
