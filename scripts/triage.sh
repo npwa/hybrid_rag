@@ -99,10 +99,15 @@ unit_report() {   # C10: state of the unit for $1, with the install hint when it
   else info "no systemd unit $1 (install with scripts/install_services.sh, see README)"; fi
 }
 
+mcp_start_prompt() {
+  if unit_installed hybrid-rag-mcp; then echo "Restart the hybrid-rag-mcp service (systemctl --user restart)?"
+  else echo "Start ./run_mcp_server.py in the background?"; fi
+}
+
 start_mcp() {
   if unit_installed hybrid-rag-mcp; then
-    "$SYSTEMCTL" --user start hybrid-rag-mcp && sleep 3
-    mcp_listening && ok "MCP server started by systemd (hybrid-rag-mcp)" || bad "still not listening; journalctl --user -u hybrid-rag-mcp"
+    "$SYSTEMCTL" --user restart hybrid-rag-mcp && sleep 3
+    mcp_listening && ok "MCP server restarted by systemd (hybrid-rag-mcp)" || bad "still not listening; journalctl --user -u hybrid-rag-mcp"
     return
   fi
   nohup "$PY" "$PROJECT_DIR/run_mcp_server.py" >> "$PROJECT_DIR/logs/run_stdout.log" 2>&1 &
@@ -124,7 +129,7 @@ check_mcp_server() {
     [ "$code" = 200 ] && ok "initialize returned HTTP 200" || bad "initialize returned HTTP $code"
   else
     bad "nothing listening on port $MCP_PORT (server down$(unit_installed hybrid-rag-mcp || echo "; it has no systemd unit, so reboots stop it"))"
-    confirm "Start ./run_mcp_server.py in the background?" && start_mcp
+    confirm "$(mcp_start_prompt)" && start_mcp
   fi
 }
 
@@ -257,7 +262,7 @@ check_stale() {
 
 check_reboot() {
   hdr "After a desktop reboot"
-  pgrep -f run_mcp_server.py >/dev/null && ok "run_mcp_server.py running" || { bad "run_mcp_server.py not running"; confirm "Start it?" && start_mcp; }
+  pgrep -f run_mcp_server.py >/dev/null && ok "run_mcp_server.py running" || { bad "run_mcp_server.py not running"; confirm "$(mcp_start_prompt)" && start_mcp; }
   unit_installed hybrid-rag-mcp && info "The systemd unit starts it at boot (needs lingering when nobody is logged in)." \
     || info "No systemd unit installed (scripts/install_services.sh), so this must be done after every reboot."
 }
@@ -301,10 +306,12 @@ check_console() {
   if ! console_listening; then
     if [ "$optional" = 1 ]; then warn "console not running (optional). Start it with: ./run_console.py   (menu 10 offers to start it)"; return 0; fi
     bad "nothing listening on port $CONSOLE_PORT (console not running)"
-    if confirm "Start ./run_console.py in the background?"; then
+    local prompt="Start ./run_console.py in the background?"
+    [ -z "${CONSOLE_START_CMD:-}" ] && unit_installed hybrid-rag-console && prompt="Restart the hybrid-rag-console service (systemctl --user restart)?"
+    if confirm "$prompt"; then
       mkdir -p "$PROJECT_DIR/logs"     # absent in a fresh checkout
       # CONSOLE_START_CMD is overridable for tests; default starts the real console.
-      if [ -z "${CONSOLE_START_CMD:-}" ] && unit_installed hybrid-rag-console; then "$SYSTEMCTL" --user start hybrid-rag-console
+      if [ -z "${CONSOLE_START_CMD:-}" ] && unit_installed hybrid-rag-console; then "$SYSTEMCTL" --user restart hybrid-rag-console
       else nohup ${CONSOLE_START_CMD:-"$PY" "$PROJECT_DIR/run_console.py"} >> "$PROJECT_DIR/logs/console.log" 2>&1 & fi
       sleep 3
       console_listening && ok "console started (log: logs/console.log)" || { bad "console did not start; see logs/console.log"; return 1; }
@@ -315,10 +322,14 @@ check_console() {
   body=$(curl -s -m 5 -w '\n%{http_code}' "http://127.0.0.1:$CONSOLE_PORT/api/v1/health") || body=$'\n000'
   code="${body##*$'\n'}"; body="${body%$'\n'*}"
   if [ "$code" != 200 ]; then bad "GET /api/v1/health returned HTTP $code: ${body:0:200}"; info "see logs/console.log; run ./run_console.py in a terminal to see the error"; return 1; fi
+  export C_OK C_BAD C_WARN C_OFF
   "$PY" - "$body" <<'PY'
-import json, sys
+import json, os, sys
 h = json.loads(sys.argv[1])
-def line(tag, msg): print(f"  [{tag}] {msg}")
+_C = {"OK": os.environ.get("C_OK", ""), "FAIL": os.environ.get("C_BAD", ""), "WARN": os.environ.get("C_WARN", "")}
+def line(tag, msg):
+    t = tag.strip(); c = _C.get(t, "")
+    print(f"  [{' ' if t == 'OK' else ''}{c}{t}{os.environ.get('C_OFF', '') if c else ''}{' ' if t == 'OK' else ''}] {msg}")
 line(" OK ", f"API healthy: status={h['status']} version={h['version']}{' (demo data)' if h['demo'] else ''}")
 src = {s["name"]: s for s in h["sources"]}
 ro_bad = [n for n in ("manifest", "lancedb") if src[n]["present"] and src[n]["read_only"] is not True]
@@ -341,17 +352,18 @@ PY
   mpath=$("$PY" -c 'import json,sys; print(next(s["path"] for s in json.loads(sys.argv[1])["sources"] if s["name"]=="manifest"))' "$body" 2>/dev/null)
   sbody=$(curl -s -m 10 "http://127.0.0.1:$CONSOLE_PORT/api/v1/index/summary")
   "$PY" - "$mpath" "$sbody" <<'PY'
-import json, sqlite3, sys
+import json, os, sqlite3, sys
 path, body = sys.argv[1], sys.argv[2]
+G, R, Y, Z = (os.environ.get(k, "") for k in ("C_OK", "C_BAD", "C_WARN", "C_OFF"))
 try:
     api = json.loads(body)["files_total"]
     n = sqlite3.connect(f"file:{path}?mode=ro", uri=True).execute("SELECT count(*) FROM files").fetchone()[0]
 except Exception as e:
-    print(f"  [WARN] could not compare the index summary with the manifest ({type(e).__name__}: {str(e)[:80]})"); sys.exit(0)
+    print(f"  [{Y}WARN{Z}] could not compare the index summary with the manifest ({type(e).__name__}: {str(e)[:80]})"); sys.exit(0)
 if api == n:
-    print(f"  [ OK ] index summary matches the manifest ({n:,} files)")
+    print(f"  [{G} OK {Z}] index summary matches the manifest ({n:,} files)")
 else:
-    print(f"  [FAIL] index summary says {api:,} files but the manifest has {n:,} (the console may be reading a different or stale database: {path})"); sys.exit(1)
+    print(f"  [{R}FAIL{Z}] index summary says {api:,} files but the manifest has {n:,} (the console may be reading a different or stale database: {path})"); sys.exit(1)
 PY
   [ $? -ne 0 ] && FAILS=$((FAILS+1))
   local today j; today=$(date +%F); j="logs/query_${today}.jsonl"

@@ -200,10 +200,45 @@ def test_c10_inactive_or_disabled_unit_warns(tmp_path):
 def test_console_down_with_unit_starts_it_through_systemd(tmp_path):
     sc, log = fake_systemctl(tmp_path, active="inactive")
     run_triage(tmp_path, "-y", "10", listening=False, env_extra={"SYSTEMCTL": str(sc)})
-    assert "--user start hybrid-rag-console" in log.read_text()
+    assert "--user restart hybrid-rag-console" in log.read_text()
 
 
 def test_mcp_down_with_unit_starts_it_through_systemd(tmp_path):
     sc, log = fake_systemctl(tmp_path, active="inactive")
     run_triage(tmp_path, "-y", "1", listening=False, env_extra={"SYSTEMCTL": str(sc), "MCP_PORT": "8398", "BOT_HOST": "127.0.0.1"})
-    assert "--user start hybrid-rag-mcp" in log.read_text()
+    assert "--user restart hybrid-rag-mcp" in log.read_text()
+
+
+def test_prompts_say_restart_service_when_the_unit_is_installed(tmp_path):
+    sc, _ = fake_systemctl(tmp_path, active="inactive")
+    r = run_triage(tmp_path, "-y", "1", listening=False, env_extra={"SYSTEMCTL": str(sc), "MCP_PORT": "8398", "BOT_HOST": "127.0.0.1"})
+    assert "Restart the hybrid-rag-mcp service (systemctl --user restart)? apply the fix?" in r.stdout
+    r = run_triage(tmp_path, "-y", "10", listening=False, env_extra={"SYSTEMCTL": str(sc)})
+    assert "Restart the hybrid-rag-console service" in r.stdout
+    sc, _ = fake_systemctl(tmp_path, installed=False)
+    r = run_triage(tmp_path, "-y", "10", listening=False, env_extra={"SYSTEMCTL": str(sc), "CONSOLE_START_CMD": "true"})
+    assert "Start ./run_console.py in the background?" in r.stdout
+
+
+def test_ok_lines_from_the_python_blocks_are_coloured_on_a_terminal(tmp_path):
+    import pty
+    run_triage(tmp_path, "10", health=healthy_with_manifest(tmp_path))   # builds bin/ and body files
+    env = {**os.environ, "PATH": f"{tmp_path / 'bin'}:{os.environ['PATH']}", "CONSOLE_PORT": "8399", "AGENT_DIR": str(tmp_path / "agent")}
+    env.pop("NO_COLOR", None)
+    master, slave = pty.openpty()
+    p = subprocess.Popen([str(TRIAGE), "10"], stdout=slave, stderr=slave, env=env, cwd=ROOT)
+    os.close(slave)
+    out = b""
+    while True:
+        try:
+            chunk = os.read(master, 4096)
+        except OSError:
+            break
+        if not chunk:
+            break
+        out += chunk
+    p.wait()
+    text = out.decode()
+    for needle in ("API healthy", "read-only access to data", "data sources:", "index summary matches"):
+        line = next(l for l in text.splitlines() if needle in l)
+        assert "\x1b[32m" in line, line
