@@ -189,6 +189,14 @@ def _lookup_existing(file_id: str) -> sqlite3.Row | None:
     return cur.fetchone()
 
 
+def _can_reuse(existing, content_hash: str, category: str) -> bool:
+    """True if the previous result for an identical file can be kept. A failed README/TODO is retried on every run:
+    its conversion is cheap and the converter script may have been fixed since (HYR-11). Other failures (OCR) are not retried."""
+    if existing is None or existing["content_hash"] != content_hash or existing["status"] in ("pending", "deleted"):
+        return False
+    return not (existing["status"] == "failed" and category == "readme")
+
+
 def _worker_task(abs_path_str: str, rel_path: str) -> WorkResult:
     config = _worker_config
     abs_path = Path(abs_path_str)
@@ -222,8 +230,7 @@ def _worker_task(abs_path_str: str, rel_path: str) -> WorkResult:
                            size, mtime, category, "failed", error_message=str(e))
 
     existing = _lookup_existing(file_id)
-    if (existing is not None and existing["content_hash"] == content_hash
-            and existing["status"] not in ("pending", "deleted")):
+    if _can_reuse(existing, content_hash, category):
         return WorkResult(
             "unchanged", file_id, abs_path_str, rel_path, filename, ext, size, mtime, category,
             existing["status"], content_hash=content_hash, reused=True,

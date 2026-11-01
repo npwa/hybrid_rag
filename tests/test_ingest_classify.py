@@ -32,3 +32,13 @@ def test_prefixes_are_configurable_and_default_keeps_old_configs_working(tmp_pat
     p = tmp_path / "c.yaml"
     p.write_text(yaml.safe_dump(raw))
     assert Config.load(p).exclude_prefixes == ("~$",)
+
+
+def test_failed_readme_is_retried_but_other_failures_and_successes_are_reused():     # HYR-11
+    from ingest.pipeline import _can_reuse
+    row = lambda status, h="h": {"content_hash": h, "status": status}
+    assert _can_reuse(row("extracted"), "h", "readme") is True
+    assert _can_reuse(row("failed"), "h", "readme") is False          # converter may have been fixed
+    assert _can_reuse(row("failed"), "h", "include") is True          # OCR failures are not re-run every time
+    assert _can_reuse(row("extracted"), "other", "include") is False  # content changed
+    assert _can_reuse(row("pending"), "h", "include") is False and _can_reuse(None, "h", "include") is False
