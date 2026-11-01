@@ -93,3 +93,30 @@ def test_enter_key_submits_and_phone_width_has_no_horizontal_scroll(page: Page, 
     page.get_by_label("Question").press("Enter")
     expect(page.get_by_role("heading", name=re.compile("Relevance gate"))).to_be_visible()
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1")
+
+
+def test_previous_results_are_cleared_and_a_spinner_shows_while_working(explorer: Page):
+    explore(explorer)
+    expect(explorer.get_by_role("heading", name=re.compile("Relevance gate"))).to_be_visible()
+    import time
+
+    def slow(route):
+        time.sleep(1.5)
+        route.continue_()
+    explorer.route("**/api/v1/explore", slow)
+    explorer.get_by_label("Question").fill("a second question about the widget")
+    explorer.get_by_role("button", name="Explore").click()
+    status = explorer.locator(".working")
+    expect(status).to_contain_text("Exploring")
+    expect(explorer.locator(".spinner")).to_be_visible()
+    expect(explorer.get_by_role("heading", name=re.compile("Relevance gate"))).to_have_count(0)    # old result is gone
+    expect(explorer.get_by_role("heading", name=re.compile("Relevance gate"))).to_be_visible(timeout=10000)
+    expect(explorer.locator(".spinner")).to_have_count(0)                                           # indicator cleared
+    assert explorer.errors == []
+
+
+def test_spinner_is_cleared_after_an_error(explorer: Page):
+    explorer.route("**/api/v1/explore", lambda r: r.fulfill(status=500, json={"error": "internal_error", "detail": "X"}))
+    explore(explorer)
+    expect(explorer.get_by_role("alert")).to_contain_text("Could not explore")
+    expect(explorer.locator(".spinner")).to_have_count(0)

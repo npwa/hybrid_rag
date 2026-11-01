@@ -18,7 +18,7 @@ export function QueryExplorer({ health }: { health: Health | null }) {
 
   async function run(q: string) {
     if (!q.trim() || busy) return;
-    setBusy(true); setError(null);
+    setBusy(true); setError(null); setResult(null);
     try { setResult(await api.explore(q.trim(), generate && !demo)); }
     catch (e) { setResult(null); setError(e instanceof ApiError ? (e.status === 429 ? "Another exploration is running; try again in a moment." : e.message) : String(e)); }
     finally { setBusy(false); }
@@ -42,6 +42,13 @@ export function QueryExplorer({ health }: { health: Health | null }) {
         {demo && <p className="muted small">Try: {DEMO_EXAMPLES.map((q) => <button key={q} type="button" className="link" onClick={() => { setText(q); run(q); }}>{q}</button>)}</p>}
         {error && <p className="error" role="alert">Could not explore: {error}</p>}
       </section>
+
+      {busy && (
+        <section className="card working" role="status" aria-live="polite">
+          <span className="spinner" aria-hidden="true" />
+          <span>Exploring{generate && !demo ? " and generating an answer" : ""}… the first question after a quiet period can take 20 seconds or more while the embedding model loads.</span>
+        </section>
+      )}
 
       {result && (
         <>
