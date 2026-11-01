@@ -3,7 +3,11 @@ import { api, type CauseCount } from "../api";
 import { useLoad } from "../hooks";
 import { fmtBytes, fmtInt } from "../format";
 
-const PAGE = 25;
+const PAGE_SIZES = [50, 100, 500];
+const SIZE_KEY = "console.failuresPageSize";
+function storedSize(): number {
+  try { const n = Number(localStorage.getItem(SIZE_KEY)); return PAGE_SIZES.includes(n) ? n : PAGE_SIZES[0]; } catch { return PAGE_SIZES[0]; }
+}
 const COLS: [string, string][] = [["path", "File"], ["extension", "Type"], ["cause", "Cause"], ["status", "Status"], ["ocr_confidence", "OCR conf."], ["size", "Size"]];
 
 export interface Filters { cause: string; extension: string; status: string; q: string }
@@ -12,6 +16,7 @@ export function FailuresTable({ causes, filters, onFilters }: { causes: CauseCou
   const [sort, setSort] = useState("path");
   const [desc, setDesc] = useState(false);
   const [offset, setOffset] = useState(0);
+  const [PAGE, setPageSize] = useState(storedSize);
   const page = useLoad(() => api.failures({ ...filters, sort, desc, limit: PAGE, offset }), [filters, sort, desc, offset]);
   const set = (patch: Partial<Filters>) => { setOffset(0); onFilters({ ...filters, ...patch }); };
   const total = page.data?.total ?? 0;
@@ -62,6 +67,11 @@ export function FailuresTable({ causes, filters, onFilters }: { causes: CauseCou
         </table>
       </div>
       <div className="pager">
+        <label className="pagesize">Rows per page
+          <select value={PAGE} onChange={(e) => { const n = Number(e.target.value); setPageSize(n); setOffset(0); try { localStorage.setItem(SIZE_KEY, String(n)); } catch { /* storage may be blocked */ } }}>
+            {PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </label>
         <button disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))}>Previous</button>
         <span>{total === 0 ? "0" : `${offset + 1}–${Math.min(offset + PAGE, total)}`} of {fmtInt(total)}</span>
         <button disabled={offset + PAGE >= total} onClick={() => setOffset(offset + PAGE)}>Next</button>

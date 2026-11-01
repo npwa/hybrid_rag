@@ -18,6 +18,9 @@
 
 set -euo pipefail
 
+# Trim and collapse whitespace. Not `xargs`: it treats quote characters as special and fails on text such as "Here's a note:" (HYR-11).
+trim() { sed -E 's/[[:space:]]+/ /g; s/^ //; s/ $//'; }
+
 if [[ $# -eq 0 ]]; then
     echo "Usage: $0 <input.txt>"
     exit 1
@@ -58,7 +61,7 @@ grep -qiE "lawyer|legal|court|estate|fiduciary|conservatorship" "$input" && tags
 rag_tags_raw=$(head -1 "$input" | tr -d '\r' \
     | grep -oiE 'rag-tags:[^;]+;' \
     | sed -E 's/rag-tags://i; s/;//' \
-    | xargs || true)
+    | trim || true)
 
 if [[ -n "$rag_tags_raw" ]]; then
     IFS='/' read -ra _rtags <<< "$rag_tags_raw"
@@ -189,7 +192,7 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     # Status lines (DONE, PENDING, IN PROGRESS, etc.)
     if [[ $line =~ ^(DONE|PENDING|IN\ PROGRESS|BLOCKED|URGENT|TODO)([,[:space:]]|$) ]]; then
         ((in_paragraph)) && { echo >> "$output"; in_paragraph=0; }
-        status=$(sed -E 's/^([A-Z][A-Z ]+)([, ].*|)$/\1/' <<< "$line" | xargs)
+        status=$(sed -E 's/^([A-Z][A-Z ]+)([, ].*|)$/\1/' <<< "$line" | trim)
         rest=$(sed -E "s/^${status// /\\ }[ ,]*//" <<< "$line")
         case $status in
             DONE)          emo="✅" ;;
@@ -248,7 +251,7 @@ while IFS= read -r line || [[ -n "$line" ]]; do
 
     # Key-value lines (e.g. "Name: Foo Bar")
     if [[ $line == *:* ]] && [[ ! $line =~ ^https?:// ]] && [[ ! $line =~ [0-9]:[0-9] ]]; then
-        key_raw=$(cut -d: -f1 <<< "$line" | xargs)
+        key_raw=$(cut -d: -f1 <<< "$line" | trim)
         val=$(cut -d: -f2- <<< "$line" | sed 's/^ *//')
         if [[ $key_raw =~ ^[A-Za-z][A-Za-z0-9\ ]{1,40}$ ]] && [[ ! $key_raw =~ [0-9] ]]; then
             ((in_paragraph)) && { echo >> "$output"; in_paragraph=0; }

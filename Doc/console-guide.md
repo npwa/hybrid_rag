@@ -33,7 +33,7 @@ combined as "(other types)".
 **Why files did not index cleanly.** Counts by cause with the ticket that tracks it. *Show files* filters the table
 below. Each cause id has a section in `Doc/Runbooks/index-failure-causes.md`.
 
-**Problem files.** Filter by cause, type or part of the path; click a column header to sort; 25 rows per page.
+**Problem files.** Filter by cause, type or part of the path; click a column header to sort; choose 50, 100 or 500 rows per page (the choice is remembered in your browser).
 Hover a row for the full error text. This includes the low-confidence-OCR files (FR-1.5) with their confidence.
 
 ## Page 2: Query explorer

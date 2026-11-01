@@ -58,7 +58,7 @@ def test_causes_table_filters_the_file_list(app: Page):                         
         expect(files.nth(i).locator("td.path")).to_contain_text("~$")
     expect(app.get_by_text("1–8 of 8")).to_be_visible()
     app.get_by_role("button", name="Clear filters").click()
-    expect(app.get_by_text(re.compile(r"1–25 of \d+"))).to_be_visible()
+    expect(app.get_by_text(re.compile(r"1–50 of \d+"))).to_be_visible()
 
 
 def test_sorting_and_paging(app: Page):
@@ -69,7 +69,7 @@ def test_sorting_and_paging(app: Page):
     expect(table.get_by_role("columnheader", name=re.compile("^File"))).to_have_attribute("aria-sort", "descending")
     expect(first).not_to_have_text(before)
     app.get_by_role("button", name="Next").click()
-    expect(app.get_by_text(re.compile(r"26–50 of"))).to_be_visible()
+    expect(app.get_by_text(re.compile(r"51–\d+ of"))).to_be_visible()
     expect(app.get_by_role("button", name="Previous")).to_be_enabled()
 
 
@@ -126,3 +126,18 @@ def test_dark_mode_renders(browser, live_console):
     bg = p.evaluate("getComputedStyle(document.body).backgroundColor")
     assert bg != "rgb(246, 247, 249)"
     ctx.close()
+
+
+def test_rows_per_page_offers_50_100_500_and_is_remembered(app: Page):
+    size = app.get_by_label("Rows per page")
+    expect(size.locator("option")).to_have_text(["50", "100", "500"])
+    expect(size).to_have_value("50")
+    app.get_by_role("button", name="Next").click()
+    size.select_option("100")
+    expect(app.get_by_text(re.compile(r"1–\d+ of \d+"))).to_be_visible()          # back on the first page
+    expect(app.get_by_role("button", name="Previous")).to_be_disabled()
+    table = app.get_by_role("table").filter(has_text="Ticket").last
+    total = int(re.search(r"of (\d+)", app.locator(".pager span").inner_text()).group(1))
+    expect(table.locator("tbody tr")).to_have_count(min(100, total))
+    app.reload()
+    expect(app.get_by_label("Rows per page")).to_have_value("100")
