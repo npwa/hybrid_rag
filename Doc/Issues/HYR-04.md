@@ -1,7 +1,7 @@
 # HYR-04: Office lock files (`~$*`) are not excluded from ingest
 
 - **Severity:** Low
-- **Status:** Fixed in code on branch `console` (2026-10-31); takes effect for existing rows at the next ingest run
+- **Status:** Closed (2026-11-01; verified by the owner)
 - **Component:** ingest file filtering / `config/`
 
 ## Impact
@@ -28,3 +28,6 @@ optional in the config so older configs keep working; `.~lock.*#` was already ex
 Tests: `tests/test_ingest_classify.py`. Files already recorded as `failed` (3 on the development corpus) become
 `skipped` on the next ingest run (excluded files are upserted as skipped before the content check). Verify
 after the next maintenance run that `GET /api/v1/index/failures?cause=lock_file` is empty, then close.
+
+## Verification (2026-11-01)
+Verified by the owner after a maintenance run (2026-11-01): no lock files remain among the failures.

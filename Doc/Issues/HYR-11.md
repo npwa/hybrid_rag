@@ -1,7 +1,7 @@
 # HYR-11: `convert_to_md.sh` aborts on text with an apostrophe before a colon
 
 - **Severity:** Low (one file affected: `Pool/README`)
-- **Status:** Fixed in code on branch `console` (2026-11-01); the file converts at the next ingest run after the retry rule below
+- **Status:** Closed (2026-11-01; verified by the owner)
 - **Component:** `convert_to_md.sh` (README/TODO conversion)
 
 ## Impact
@@ -26,3 +26,6 @@ and the converter script can change); other failures (e.g. OCR produced no text)
 
 ## Related
 HYR-04 (other file-filter fix in the same stage).
+
+## Verification (2026-11-01)
+Verified by the owner after a maintenance run (2026-11-01): `Pool/README` converts and is no longer listed as failed.
