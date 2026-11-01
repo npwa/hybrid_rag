@@ -139,6 +139,20 @@ Every warning the console shows names its runbook in `Doc/Runbooks/` (the list i
 `scripts/triage.sh` sections print the same file). A test checks that each warning has a file and that each file is linked. Postmortems of
 six real incidents are in `Doc/Postmortems/` (`README.md` is the index).
 
+## Running it as a service (systemd --user)
+`scripts/install_services.sh` renders `deploy/systemd/hybrid-rag-console.service` and `hybrid-rag-mcp.service` into `~/.config/systemd/user`
+(nothing is enabled or started). To switch from hand-started processes: stop `run_console.py` and `run_mcp_server.py`, run
+`scripts/install_services.sh --enable`, and once run `loginctl enable-linger $USER` so the units start at boot without a login.
+Both restart on failure. The console unit may write only to `logs/`. Status: `systemctl --user status hybrid-rag-console`; logs:
+`journalctl --user -u hybrid-rag-console`. `scripts/triage.sh 10` and `1` report the unit state and start through systemd when it exists.
+`--uninstall` removes both.
+
+## Security notes
+Loopback only (a different `--host` prints a warning). Requests whose `Host` header is not `localhost`/`127.0.0.1`/`::1` get HTTP 421
+(DNS-rebinding defence); every method except GET/HEAD, and POST to the explorer, gets 405; no CORS headers are sent; responses carry
+`nosniff`, `X-Frame-Options: DENY`, a same-origin Content-Security-Policy and (API) `Cache-Control: no-store`. There is no
+authentication: anyone with a shell on this desktop can read what the console shows.
+
 ## API (for scripts)
 Interactive docs at `/docs`; snapshot in `Doc/api/openapi.json`. Page 4 uses `GET /api/v1/toolcalls/summary?days=30`. The gold card uses `GET /api/v1/gold`, warnings link through `GET /api/v1/runbooks`. Page 3 uses `GET /api/v1/queries/stats?days=30` and `GET /api/v1/queries/slow?kind=slow|no_result|error&days=30&limit=15`. Page 2 uses `POST /api/v1/explore` (body `{"query": "...", "generate": false}`). Page 1 uses `/api/v1/health`,
 `/api/v1/index/summary`, `/api/v1/index/failures`, `/api/v1/index/causes`, `/api/v1/maintenance/runs`.

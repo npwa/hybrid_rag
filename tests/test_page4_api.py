@@ -68,14 +68,14 @@ def test_sources_describe_the_copied_logs(client):
 
 def test_no_agent_logs_gives_a_helpful_empty_response(demo_config, tmp_path):
     demo_config.agent_logs_dir = tmp_path / "nothing"
-    d = summary(TestClient(create_app(demo_config)))
+    d = summary(TestClient(create_app(demo_config), base_url="http://localhost"))
     assert d["available"] is False and "pull_agent_logs.sh" in d["detail"] and d["sources"]["files"] == 0
 
 
 def test_without_desktop_jsonl_agent_starts_show_as_unseen(demo_config, tmp_path):
     demo_config.logs_dir = tmp_path / "emptylogs"               # no query logs at all (e.g. before milestone M1)
     demo_config.logs_dir.mkdir()
-    d = summary(TestClient(create_app(demo_config)))
+    d = summary(TestClient(create_app(demo_config), base_url="http://localhost"))
     assert d["desktop"]["calls"] == 0 and d["totals"]["matched"] == 0
     assert d["totals"]["agent_starts_without_desktop_call"] == d["totals"]["tool_starts"] and d["jsonl_days_with_mcp_records"] == 0
 

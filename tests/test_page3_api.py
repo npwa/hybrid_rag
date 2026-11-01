@@ -42,7 +42,7 @@ def month(demo_config, tmp_path):
 
 
 def get(cfg, url):
-    r = TestClient(create_app(cfg)).get(url)
+    r = TestClient(create_app(cfg), base_url="http://localhost").get(url)
     assert r.status_code == 200, r.text
     return r.json()
 
@@ -127,7 +127,7 @@ def test_no_result_and_error_lists(month):
 def test_window_and_validation(month):
     assert get(month, "/api/v1/queries/stats?days=3")["totals"]["queries"] == 7          # 29, 30 and (empty) 31 Oct
     assert get(month, "/api/v1/queries/stats?days=2")["totals"]["queries"] == 4
-    c = TestClient(create_app(month))
+    c = TestClient(create_app(month), base_url="http://localhost")
     for bad in ("days=0", "days=999", "slow_seconds=0", "kind=nope"):
         assert c.get(f"/api/v1/queries/{'slow' if 'kind' in bad else 'stats'}?{bad}").status_code == 422
 

@@ -25,10 +25,10 @@ def test_health_shape_and_read_only_flags(client):                             #
 
 def test_stale_flag_follows_threshold(demo_config):
     demo_config.stale_after_hours = 10_000
-    h = TestClient(create_app(demo_config)).get("/api/v1/health").json()
+    h = TestClient(create_app(demo_config), base_url="http://localhost").get("/api/v1/health").json()
     assert h["maintenance"]["stale"] is False
     demo_config.stale_after_hours = 0.001
-    h = TestClient(create_app(demo_config)).get("/api/v1/health").json()
+    h = TestClient(create_app(demo_config), base_url="http://localhost").get("/api/v1/health").json()
     assert h["maintenance"]["stale"] is True
 
 
@@ -44,7 +44,7 @@ def test_index_summary_counts_equal_independent_sql(client, demo_dir):          
 
 def test_missing_manifest_gives_json_error_not_a_stack_trace(demo_config, tmp_path):   # API4
     demo_config.manifest_db = tmp_path / "nope.db"
-    c = TestClient(create_app(demo_config), raise_server_exceptions=False)
+    c = TestClient(create_app(demo_config), raise_server_exceptions=False, base_url="http://localhost")
     r = c.get("/api/v1/index/summary")
     assert r.status_code == 503 and r.json()["error"] == "source_unavailable"
     h = c.get("/api/v1/health").json()                                          # health itself never fails
@@ -55,7 +55,7 @@ def test_corrupt_manifest_degrades_cleanly(demo_config, tmp_path):
     bad = tmp_path / "bad.db"
     bad.write_bytes(b"not a database" * 100)
     demo_config.manifest_db = bad
-    c = TestClient(create_app(demo_config), raise_server_exceptions=False)
+    c = TestClient(create_app(demo_config), raise_server_exceptions=False, base_url="http://localhost")
     assert c.get("/api/v1/health").status_code == 200
     r = c.get("/api/v1/index/summary")
     assert r.status_code == 500 and r.json()["error"] == "internal_error" and "Traceback" not in r.text
@@ -76,7 +76,7 @@ def test_openapi_schema_documents_endpoints(client):                            
 def test_built_ui_is_served_when_present(demo_config, tmp_path):
     (tmp_path / "index.html").write_text("<h1>built ui</h1>")
     demo_config.static_dir = tmp_path
-    c = TestClient(create_app(demo_config))
+    c = TestClient(create_app(demo_config), base_url="http://localhost")
     assert "built ui" in c.get("/").text and c.get("/api/v1/health").status_code == 200
 
 

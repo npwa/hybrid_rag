@@ -130,14 +130,14 @@ Run `scripts/triage.sh` for an interactive menu of common failures (Signal can't
 key problems on `npabot-u24`). Checks are read-only; known fixes are offered with an
 `apply the fix? (y/N)` prompt. Menu item 10 checks the operator console (below).
 
-## Operator console (in progress)
+## Operator console
 
 A read-only API (and, in later milestones, a web UI) that shows pipeline health, how
 retrieval reached an answer, query-log analytics and OpenClaw tool-call behavior. It never
 changes the index, the manifest or any server's behavior and runs as its own process.
 Requirements: `Doc/step-9-requirements.md`; plan and status: `Doc/step-9-plan.md`.
 
-Status: **milestone M6**. A **gold question set** (`scripts/run_gold_set.py`) checks that known questions still find their documents; every console warning links to a runbook (`Doc/Runbooks/`), and `Doc/Postmortems/` holds six incident write-ups. The **Query analytics** page works (volume, latency, no-result and error rates, slow and recurring questions, privacy mode). The **Tool-call monitor** works too (OpenClaw logs copied by `scripts/pull_agent_logs.sh`, reconciled with the
+Status: **milestone M7 (all four pages built; owner sign-off of the acceptance walkthrough pending, see `Doc/step-9-acceptance.md`)**. `make check` runs the type-check, shell/Python syntax checks, the OpenAPI snapshot check and all tests. `scripts/install_services.sh` installs systemd `--user` units for the console and the MCP server (HYR-01). A **gold question set** (`scripts/run_gold_set.py`) checks that known questions still find their documents; every console warning links to a runbook (`Doc/Runbooks/`), and `Doc/Postmortems/` holds six incident write-ups. The **Query analytics** page works (volume, latency, no-result and error rates, slow and recurring questions, privacy mode). The **Tool-call monitor** works too (OpenClaw logs copied by `scripts/pull_agent_logs.sh`, reconciled with the
 desktop's query log). The **Query explorer** works: type a question and see the dense and keyword hits, the fused
 ranking, the relevance-gate verdict and timings (nothing is written to the production query logs). The **Index health** page works: files by outcome, type and failure cause,
 maintenance history, index staleness, the ANN-index gauge and a filterable list of problem files, each linked to a

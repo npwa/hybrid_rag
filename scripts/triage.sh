@@ -18,7 +18,7 @@
 #   BOT_KEY  (default ~/.ssh/claude/id_claude_ed25519)
 #   MCP_PORT (default 8200)         BOT_VM (libvirt domain, default npa-u24)
 #   CONSOLE_PORT (default 8300)     operator console (Doc/step-9-requirements.md)
-#   CONSOLE_START_CMD (default: python run_console.py)   AGENT_DIR (logs/agent)   PULL_MAX_HOURS (36)   PULL_CMD
+#   CONSOLE_START_CMD (default: the systemd unit if installed, else python run_console.py)   SYSTEMCTL   AGENT_DIR (logs/agent)   PULL_MAX_HOURS (36)   PULL_CMD
 
 set -u
 SCRIPT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"   # absolute: we cd below
@@ -88,7 +88,23 @@ mcp_listening() { ss -ltn 2>/dev/null | grep -q ":$MCP_PORT "; }
 bot_reachable() { ping -c1 -W2 "$BOT_HOST" >/dev/null 2>&1; }
 bot_login_ok()  { bot_verb id >/dev/null; }
 
+# systemd --user units (scripts/install_services.sh). SYSTEMCTL is overridable for tests.
+SYSTEMCTL="${SYSTEMCTL:-systemctl}"
+unit_installed() { "$SYSTEMCTL" --user cat "$1.service" >/dev/null 2>&1; }
+unit_report() {   # C10: state of the unit for $1, with the install hint when it is missing
+  if unit_installed "$1"; then
+    local st en; st=$("$SYSTEMCTL" --user is-active "$1" 2>/dev/null); en=$("$SYSTEMCTL" --user is-enabled "$1" 2>/dev/null)
+    if [ "$st" = active ]; then ok "systemd unit $1: active ($en)"; else warn "systemd unit $1 is ${st:-unknown} ($en)"; fi
+    [ "$en" = enabled ] || info "not enabled at boot: systemctl --user enable $1"
+  else info "no systemd unit $1 (install with scripts/install_services.sh, see README)"; fi
+}
+
 start_mcp() {
+  if unit_installed hybrid-rag-mcp; then
+    "$SYSTEMCTL" --user start hybrid-rag-mcp && sleep 3
+    mcp_listening && ok "MCP server started by systemd (hybrid-rag-mcp)" || bad "still not listening; journalctl --user -u hybrid-rag-mcp"
+    return
+  fi
   nohup "$PY" "$PROJECT_DIR/run_mcp_server.py" >> "$PROJECT_DIR/logs/run_stdout.log" 2>&1 &
   sleep 3
   mcp_listening && ok "MCP server started (pid $!)" || bad "still not listening; see logs/run_stdout.log"
@@ -98,6 +114,7 @@ start_mcp() {
 
 check_mcp_server() {
   hdr "MCP server on this desktop" mcp-server-down.md
+  unit_report hybrid-rag-mcp
   if mcp_listening; then
     ok "port $MCP_PORT is listening"
     local code
@@ -106,7 +123,7 @@ check_mcp_server() {
       -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"triage","version":"0"}}}')
     [ "$code" = 200 ] && ok "initialize returned HTTP 200" || bad "initialize returned HTTP $code"
   else
-    bad "nothing listening on port $MCP_PORT (server down; it has no systemd unit, so reboots stop it)"
+    bad "nothing listening on port $MCP_PORT (server down$(unit_installed hybrid-rag-mcp || echo "; it has no systemd unit, so reboots stop it"))"
     confirm "Start ./run_mcp_server.py in the background?" && start_mcp
   fi
 }
@@ -241,7 +258,8 @@ check_stale() {
 check_reboot() {
   hdr "After a desktop reboot"
   pgrep -f run_mcp_server.py >/dev/null && ok "run_mcp_server.py running" || { bad "run_mcp_server.py not running"; confirm "Start it?" && start_mcp; }
-  info "No systemd unit yet, so this must be done after every reboot."
+  unit_installed hybrid-rag-mcp && info "The systemd unit starts it at boot (needs lingering when nobody is logged in)." \
+    || info "No systemd unit installed (scripts/install_services.sh), so this must be done after every reboot."
 }
 
 console_listening() { ss -ltn 2>/dev/null | grep -q ":$CONSOLE_PORT "; }
@@ -279,13 +297,15 @@ check_agent_pull() {
 check_console() {
   local optional="${1:-0}"
   hdr "Operator console (port $CONSOLE_PORT)" console-down.md
+  unit_report hybrid-rag-console
   if ! console_listening; then
     if [ "$optional" = 1 ]; then warn "console not running (optional). Start it with: ./run_console.py   (menu 10 offers to start it)"; return 0; fi
     bad "nothing listening on port $CONSOLE_PORT (console not running)"
     if confirm "Start ./run_console.py in the background?"; then
       mkdir -p "$PROJECT_DIR/logs"     # absent in a fresh checkout
       # CONSOLE_START_CMD is overridable for tests; default starts the real console.
-      nohup ${CONSOLE_START_CMD:-"$PY" "$PROJECT_DIR/run_console.py"} >> "$PROJECT_DIR/logs/console.log" 2>&1 &
+      if [ -z "${CONSOLE_START_CMD:-}" ] && unit_installed hybrid-rag-console; then "$SYSTEMCTL" --user start hybrid-rag-console
+      else nohup ${CONSOLE_START_CMD:-"$PY" "$PROJECT_DIR/run_console.py"} >> "$PROJECT_DIR/logs/console.log" 2>&1 & fi
       sleep 3
       console_listening && ok "console started (log: logs/console.log)" || { bad "console did not start; see logs/console.log"; return 1; }
     else return 1; fi

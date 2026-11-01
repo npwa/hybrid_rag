@@ -56,7 +56,7 @@ def test_health_warnings_name_a_runbook_when_services_are_down(demo_config, monk
     monkeypatch.setattr(health, "_tcp_listening", lambda port: False)
     monkeypatch.setattr(health, "_http_ok", lambda url: False)
     cfg = dataclasses.replace(demo_config, demo=False)
-    d = TestClient(create_app(cfg)).get("/api/v1/health").json()
+    d = TestClient(create_app(cfg), base_url="http://localhost").get("/api/v1/health").json()
     ids = {w["id"] for w in d["warnings"]}
     assert {"mcp_down", "ollama_down"} <= ids
     for w in d["warnings"]:
@@ -74,7 +74,7 @@ def test_toolcall_flags_carry_runbooks(client):
 
 def test_missing_agent_logs_warn_with_runbook(demo_config, tmp_path):
     cfg = dataclasses.replace(demo_config, agent_logs_dir=tmp_path / "none")
-    d = TestClient(create_app(cfg)).get("/api/v1/toolcalls/summary").json()
+    d = TestClient(create_app(cfg), base_url="http://localhost").get("/api/v1/toolcalls/summary").json()
     assert d["available"] is False and d["warnings"][0]["id"] == "agent_logs_missing"
     assert (ROOT / d["warnings"][0]["runbook"]).exists()
 

@@ -412,7 +412,7 @@ milestone's docs are part of its exit criteria.
 | M4 Agent log pull and Page 4, Tool-call monitor | Done on `console` (see "M4 as built" below); real failure-case sample still missing |
 | M5 Page 3, Query log analytics | Done on `console` (see "M5 as built" below) |
 | M6 Gold set, postmortems, runbooks | Done on `console` (see "M6 as built" below) |
-| M7 | Not started |
+| M7 Hardening, packaging, acceptance | Built on `console` (see "M7 as built"); owner steps pending in `Doc/step-9-acceptance.md` |
 
 ### Findings during M0 that affect later milestones
 - The real manifest has 285 `ocr_low_confidence` files and 509 `failed` (413 "OCR produced no text", 12 permission
@@ -571,3 +571,19 @@ milestone's docs are part of its exit criteria.
   source, code and `triage.sh`.
 - **Observation (not a defect of M6):** `scripts/triage.sh 4` showed only the embedding model loaded on Ollama a few minutes after the last
   question; the 35B model had been unloaded, so the next Signal question pays a model reload. See `slow-answers.md`.
+
+### M7 as built (2026-11-01)
+- **Services (HYR-01):** `deploy/systemd/*.service` + `scripts/install_services.sh` (`--enable`, `--dest`, `--uninstall`); `triage.sh` check C10
+  (unit state in sections 1 and 10, start through systemd when installed). Verified: rendered units pass `systemd-analyze --user verify`.
+  **Not installed on this desktop by me**: that is a change to your login session and the ports 8200/8300 are held by hand-started processes.
+- **`make check`** (`scripts/check.sh`): Python compile, shell syntax, `tsc --noEmit`, unit lint, OpenAPI snapshot is current, then all tests.
+- **Security review** (requirements §2 and §6): found the console accepted any `Host` header, so a web page could reach it through DNS rebinding
+  from the browser. Fixed with a Host allow-list (421), a write-method block (405; only the explorer POST is allowed), CSP and other
+  headers, `no-store` on the API. Tests `tests/test_security.py` (also: no CORS, no static path traversal, routes are GET plus one POST).
+  Remaining by design: no authentication (loopback only), explorer log contains typed questions.
+- **Performance (API3)** on the real data (2,539 files): every GET answers in 1 to 23 ms; the explorer takes about 0.1 s warm. The first explore
+  after the embedding model was unloaded took 24.5 s (Ollama reload, `keep_alive` is 5 minutes). Not worked around: warming it would make the
+  console talk to Ollama on its own.
+- **`scripts/verify_readonly.sh`**: checksums `manifest.db*` and all 1,780 files in `lancedb/`, calls every parameterless GET endpoint and the explorer,
+  checksums again. Result on the real data: unchanged.
+- **Tests:** 246 pass (+18): security 7, services 6, triage C10 5.

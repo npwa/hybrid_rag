@@ -65,7 +65,7 @@ def test_full_api_session_leaves_data_directory_untouched(demo_config, demo_dir)
     from fastapi.testclient import TestClient
     from console.api import create_app
     before = snapshot(demo_dir)
-    c = TestClient(create_app(demo_config), raise_server_exceptions=False)
+    c = TestClient(create_app(demo_config), raise_server_exceptions=False, base_url="http://localhost")
     for path in ("/api/v1/health", "/api/v1/index/summary", "/api/v1/health", "/", "/api/v1/nope", "/docs"):
         c.get(path)
     assert snapshot(demo_dir) == before
@@ -82,7 +82,7 @@ def test_console_works_with_unwritable_data_and_creates_nothing(private_demo):  
     try:
         files_before = {str(p) for p in private_demo.rglob("*") if not p.name.endswith(WAL_SIDE_FILES)}
         cfg = ConsoleConfig.load(ROOT / "config" / "console_config.example.yaml", demo=True, working_dir=private_demo)
-        c = TestClient(create_app(cfg), raise_server_exceptions=False)
+        c = TestClient(create_app(cfg), raise_server_exceptions=False, base_url="http://localhost")
         assert c.get("/api/v1/health").status_code == 200
         assert c.get("/api/v1/index/summary").status_code == 200
         assert {str(p) for p in private_demo.rglob("*") if not p.name.endswith(WAL_SIDE_FILES)} == files_before
@@ -97,7 +97,7 @@ def test_console_holds_no_lock_another_process_can_write(demo_config, private_de
     from console.config import ConsoleConfig
     from tests.conftest import ROOT
     cfg = ConsoleConfig.load(ROOT / "config" / "console_config.example.yaml", demo=True, working_dir=private_demo)
-    c = TestClient(create_app(cfg), raise_server_exceptions=False)
+    c = TestClient(create_app(cfg), raise_server_exceptions=False, base_url="http://localhost")
     assert c.get("/api/v1/index/summary").status_code == 200
     writer = sqlite3.connect(private_demo / "manifest.db", timeout=1)            # the pipeline's write path
     writer.execute("UPDATE files SET last_processed='2099-01-01T00:00:00' WHERE rowid=1")

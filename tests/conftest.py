@@ -29,7 +29,7 @@ def demo_config(demo_dir):
 def client(demo_config):
     from fastapi.testclient import TestClient
     from console.api import create_app
-    return TestClient(create_app(demo_config), raise_server_exceptions=False)
+    return TestClient(create_app(demo_config), raise_server_exceptions=False, base_url="http://localhost")
 
 
 @pytest.fixture(scope="session")

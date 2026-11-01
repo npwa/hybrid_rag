@@ -91,7 +91,7 @@ def test_failures_input_validation_is_json(client):
 
 def test_masking_hides_paths_and_messages(demo_config):
     demo_config.mask_queries = True
-    c = TestClient(create_app(demo_config))
+    c = TestClient(create_app(demo_config), base_url="http://localhost")
     items = c.get("/api/v1/index/failures?limit=500").json()["items"]
     assert items and all(i["rel_path"].startswith("[masked-") for i in items)
     assert all("/demo/Documents" not in (i["error_message"] or "") for i in items)
@@ -103,7 +103,7 @@ def test_masking_hides_paths_and_messages(demo_config):
 def test_ann_gauge_states(demo_config):                                             # T-P1-6
     def state(threshold):
         demo_config.ann_threshold_chunks = threshold
-        return TestClient(create_app(demo_config)).get("/api/v1/index/summary").json()["ann"]
+        return TestClient(create_app(demo_config), base_url="http://localhost").get("/api/v1/index/summary").json()["ann"]
     n = state(10_000_000)["chunks"]
     assert state(10_000_000)["state"] == "ok"
     assert state(n * 2 - 1)["state"] == "approaching"            # at or above half of the threshold

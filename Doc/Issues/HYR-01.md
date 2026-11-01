@@ -1,7 +1,7 @@
 # HYR-01: MCP server has no service supervisor (manual start only)
 
 - **Severity:** High
-- **Status:** Open
+- **Status:** Fixed in code on branch `console` (2026-11-01); takes effect when the owner runs `scripts/install_services.sh --enable` and `loginctl enable-linger`; acceptance (reboot test) pending
 - **Component:** `run_mcp_server.py` (desktop npalmass-desk1, port 8200)
 
 ## Impact
@@ -24,3 +24,9 @@ triage.sh `start_mcp` fix to use `systemctl --user start` when the unit exists.
 ## Acceptance
 Reboot the desktop; with no manual action, port 8200 listens and a fresh Signal
 session can call `ask_documents`.
+
+## Resolution (2026-11-01)
+`deploy/systemd/hybrid-rag-mcp.service` (`Restart=on-failure`, project venv and working directory, ordered after the network and Ollama) and
+`hybrid-rag-console.service`, installed by `scripts/install_services.sh` (see `Doc/console-guide.md`, "Running it as a service").
+`scripts/triage.sh` reports the unit state and starts the MCP server through `systemctl --user start` when the unit is installed. Lingering is
+not enabled by the script (it changes the login-manager state); the installer prints the command. **Not yet verified by a real desktop reboot.**

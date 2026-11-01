@@ -36,6 +36,13 @@ class ExploreRequest(BaseModel):
     generate: bool = Field(False, description="also generate an answer with the language model (uses the GPU)")
 
 
+def _host_name(header: str) -> str:
+    """'localhost:8300' -> 'localhost'; '[::1]:8300' -> '::1'."""
+    if header.startswith("["):
+        return header[1:].split("]", 1)[0]
+    return header.rsplit(":", 1)[0] if header.count(":") == 1 else header
+
+
 def create_app(config: ConsoleConfig, embed=None, query_config=None) -> FastAPI:
     """`embed` / `query_config` are test hooks; the explorer builds both itself otherwise."""
     def _warm_up():   # importing lancedb takes ~0.9 s; do it before the first request needs it (API3: under 1 s)
@@ -47,6 +54,30 @@ def create_app(config: ConsoleConfig, embed=None, query_config=None) -> FastAPI:
 
     app = FastAPI(title="Hybrid RAG console", version=__version__,
                   description="Read-only observability API for the Hybrid RAG pipeline.")
+
+    loopback_only = config.host in ("127.0.0.1", "localhost", "::1")
+
+    @app.middleware("http")
+    async def guard(request: Request, call_next):
+        # DNS-rebinding defence: a web page on another site can make the browser send requests to
+        # 127.0.0.1 with the attacker's host name. Only loopback names are served when bound to loopback.
+        if loopback_only:
+            host = _host_name(request.headers.get("host", ""))
+            if host not in ("127.0.0.1", "localhost", "::1"):
+                return JSONResponse(status_code=421, content={"error": "bad_host", "detail": "use http://127.0.0.1 or http://localhost"})
+        # The only non-GET route is the explorer, a POST because the question can be long; it only reads.
+        if request.method not in ("GET", "HEAD") and (request.method, request.url.path) != ("POST", "/api/v1/explore"):
+            return JSONResponse(status_code=405, content={"error": "read_only", "detail": "the console is read-only"},
+                                headers={"Allow": "GET, HEAD"})
+        resp = await call_next(request)
+        resp.headers["X-Content-Type-Options"] = "nosniff"
+        resp.headers["X-Frame-Options"] = "DENY"
+        resp.headers["Referrer-Policy"] = "no-referrer"
+        resp.headers["Content-Security-Policy"] = ("default-src 'self'; style-src 'self' 'unsafe-inline'; "
+                                                   "img-src 'self' data:; frame-ancestors 'none'")
+        if request.url.path.startswith("/api/"):
+            resp.headers["Cache-Control"] = "no-store"
+        return resp
 
     @app.exception_handler(Exception)
     async def unhandled(_: Request, exc: Exception):

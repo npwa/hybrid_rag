@@ -1,0 +1,15 @@
+[Unit]
+Description=Hybrid RAG MCP server (ask_documents for OpenClaw, port 8200)
+After=network-online.target ollama.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@PROJECT_DIR@
+ExecStart=@PROJECT_DIR@/.venv/bin/python @PROJECT_DIR@/run_mcp_server.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

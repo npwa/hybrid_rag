@@ -1,0 +1,18 @@
+[Unit]
+Description=Hybrid RAG operator console (read-only, loopback only)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=@PROJECT_DIR@
+ExecStart=@PROJECT_DIR@/.venv/bin/python @PROJECT_DIR@/run_console.py
+Restart=on-failure
+RestartSec=5
+# The console only reads; these make that hard to get wrong.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=@PROJECT_DIR@/logs
+
+[Install]
+WantedBy=default.target

@@ -117,18 +117,18 @@ def saved_report(demo_cfg_file, demo_dir):
 
 
 def test_api_without_a_saved_run(demo_config):
-    d = TestClient(create_app(demo_config)).get("/api/v1/gold").json()
+    d = TestClient(create_app(demo_config), base_url="http://localhost").get("/api/v1/gold").json()
     assert d["available"] is False and "run_gold_set.py" in d["detail"]
 
 
 def test_api_returns_the_saved_run(demo_config, saved_report):
-    d = TestClient(create_app(demo_config)).get("/api/v1/gold").json()
+    d = TestClient(create_app(demo_config), base_url="http://localhost").get("/api/v1/gold").json()
     assert d["available"] and d["total"] == 8 and d["passed"] == 8 and len(d["items"]) == 8
     assert d["items"][0]["question"] == "when does the ferry to the island leave" and d["items"][0]["sources_any"]
 
 
 def test_api_masks_questions_and_paths(demo_config, saved_report):                               # T-PRIV-2
-    body = TestClient(create_app(dataclasses.replace(demo_config, mask_queries=True))).get("/api/v1/gold").text
+    body = TestClient(create_app(dataclasses.replace(demo_config, mask_queries=True)), base_url="http://localhost").get("/api/v1/gold").text
     for secret in ("ferry", "mozart", "Travel/Trips", "Garden/Plans"):
         assert secret not in body, secret
     assert "[masked-" in body

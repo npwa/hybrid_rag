@@ -167,3 +167,43 @@ def test_c6_fresh_copy_is_ok_stale_copy_warns(tmp_path):
     flag = tmp_path / "pulled.flag"
     r = run_triage(tmp_path, "-y", "10", health=healthy_with_manifest(tmp_path), env_extra={"PULL_CMD": f"touch {flag}"})
     assert flag.exists()
+
+
+def fake_systemctl(tmp_path, installed=True, active="active", enabled="enabled"):
+    f = tmp_path / "systemctl"
+    log = tmp_path / "systemctl.calls"
+    f.write_text("#!/bin/sh\n" f'echo "$*" >> {log}\n'
+                 + ('case "$2" in cat) exit 1;; esac\n' if not installed else "")
+                 + f'case "$2" in is-active) echo {active};; is-enabled) echo {enabled};; esac\nexit 0\n')
+    f.chmod(0o755)
+    return f, log
+
+
+def test_c10_reports_active_enabled_unit(tmp_path):                               # C10
+    sc, _ = fake_systemctl(tmp_path)
+    r = run_triage(tmp_path, "10", health=healthy_with_manifest(tmp_path), env_extra={"SYSTEMCTL": str(sc)})
+    assert "systemd unit hybrid-rag-console: active (enabled)" in r.stdout and r.returncode == 0
+
+
+def test_c10_missing_unit_points_to_installer(tmp_path):
+    sc, _ = fake_systemctl(tmp_path, installed=False)
+    r = run_triage(tmp_path, "10", health=healthy_with_manifest(tmp_path), env_extra={"SYSTEMCTL": str(sc)})
+    assert "no systemd unit hybrid-rag-console (install with scripts/install_services.sh" in r.stdout
+
+
+def test_c10_inactive_or_disabled_unit_warns(tmp_path):
+    sc, _ = fake_systemctl(tmp_path, active="failed", enabled="disabled")
+    r = run_triage(tmp_path, "10", health=healthy_with_manifest(tmp_path), env_extra={"SYSTEMCTL": str(sc)})
+    assert "systemd unit hybrid-rag-console is failed (disabled)" in r.stdout and "systemctl --user enable hybrid-rag-console" in r.stdout
+
+
+def test_console_down_with_unit_starts_it_through_systemd(tmp_path):
+    sc, log = fake_systemctl(tmp_path, active="inactive")
+    run_triage(tmp_path, "-y", "10", listening=False, env_extra={"SYSTEMCTL": str(sc)})
+    assert "--user start hybrid-rag-console" in log.read_text()
+
+
+def test_mcp_down_with_unit_starts_it_through_systemd(tmp_path):
+    sc, log = fake_systemctl(tmp_path, active="inactive")
+    run_triage(tmp_path, "-y", "1", listening=False, env_extra={"SYSTEMCTL": str(sc), "MCP_PORT": "8398", "BOT_HOST": "127.0.0.1"})
+    assert "--user start hybrid-rag-mcp" in log.read_text()
